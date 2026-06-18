@@ -100,3 +100,17 @@ Versi ini menambahkan:
 ## Catatan Luas Lahan
 
 Pada contoh file `contoh_format_upload_peternakan.xlsx`, sheet `Petunjuk` sudah ditambahkan catatan: **Tambahkan `luas_lahan_ha` pada CSV/XLSX untuk insight lebih baik**. Kolom ini dipakai aplikasi untuk menghitung kepadatan ternak per hektare.
+
+## Modul Profil Lingkungan & Kesuburan Lahan
+
+Versi ini menambahkan analisis:
+- Elevasi / ketinggian tempat dari SRTM.
+- Kemiringan lahan dari turunan data elevasi.
+- Curah hujan 30 dan 90 hari dari CHIRPS.
+- Estimasi pH tanah dari OpenLandMap.
+- Estimasi karbon organik tanah dari OpenLandMap.
+- Skor lingkungan 0–100.
+- Rekomendasi lingkungan untuk peternak awam.
+- Download laporan lingkungan dalam format XLSX.
+
+Catatan penting: data tanah, elevasi, dan curah hujan pada aplikasi bersifat estimasi awal dari satelit/model global. Untuk mendapatkan data yang lebih akurat, peternak tetap perlu melakukan pengecekan langsung di lapangan dan uji tanah bila diperlukan.
