@@ -1,121 +1,56 @@
-# 🐄 Pemetaan Lokasi Peternakan + Analisis Citra Satelit Sentinel-2
+# Dashboard Peternakan Indonesia + NDVI Sentinel-2
 
-Aplikasi web interaktif berbasis **Streamlit** untuk:
-- Memetakan lokasi peternakan
-- Visualisasi data di peta interaktif
-- Analisis kesehatan vegetasi (NDVI) menggunakan **citra satelit Sentinel-2** secara gratis via Google Earth Engine
+Aplikasi web Streamlit untuk memetakan data peternakan Indonesia, menampilkan statistik populasi ternak, dan menganalisis NDVI Sentinel-2 menggunakan Google Earth Engine.
 
-Cocok untuk mahasiswa, Dinas Peternakan, atau monitoring peternakan skala kecil-menengah.
+## Perubahan Versi Revisi
 
-## ✨ Fitur Utama
+- Data bawaan diganti dari data sintetis menjadi data agregat provinsi berbasis tabel BPS 2024.
+- Ditambahkan keterangan bahwa titik peta BPS adalah koordinat representatif ibu kota provinsi, bukan lokasi kandang individu.
+- Ditambahkan filter provinsi dan jenis ternak.
+- Tampilan peta diperbaiki dengan radius marker proporsional terhadap jumlah populasi.
+- Emblem/menu/footer bawaan Streamlit disembunyikan dengan CSS.
+- Footer custom ditambahkan: `Developed by Marcus Thorne`.
+- Catatan sumber data BPS ditampilkan di aplikasi.
 
-- Upload data peternakan via CSV
-- Peta interaktif dengan marker lokasi (folium)
-- Popup detail + filter sederhana
-- **Analisis Sentinel-2 real-time**: Hitung NDVI rata-rata dalam radius 500m dari kandang (indikator kesehatan pakan hijauan)
-- Sample data Indonesia (sekitar Bogor & Bekasi)
-- Dashboard statistik dasar
-- Siap dikembangkan lebih lanjut (buffer analysis, time-series, export laporan)
+## File Utama
 
-## 📦 Instalasi & Menjalankan
+- `app.py` — aplikasi Streamlit versi revisi.
+- `data_peternakan_indonesia_bps_2024.csv` — data bawaan agregat BPS 2024.
+- `requirements.txt` — dependency Python.
 
-### 1. Clone / Download
-Download folder ini atau clone repo.
+## Cara Menjalankan
 
-### 2. Install dependencies
 ```bash
 pip install -r requirements.txt
-```
-
-### 3. Setup Google Earth Engine (WAJIB untuk fitur satelit)
-1. Buat akun gratis di [Google Earth Engine](https://earthengine.google.com/)
-2. Buat Google Cloud Project baru (atau pakai existing)
-3. Aktifkan **Earth Engine API** di project tersebut
-4. Jalankan di terminal:
-   ```bash
-   earthengine authenticate
-   ```
-   Ikuti instruksi browser untuk login & authorize.
-
-   **Catatan 2026**: Beberapa akun baru butuh `ee.Initialize(project='nama-project-mu')`. Lihat di app.py bagian `ee.Initialize()`.
-
-### 4. Jalankan aplikasi
-```bash
 streamlit run app.py
 ```
 
-Buka browser di `http://localhost:8501`
+## Setup Google Earth Engine
 
-## 📋 Format File CSV
+Fitur peta dan statistik tetap berjalan tanpa Google Earth Engine. Untuk fitur NDVI, lakukan autentikasi:
 
-Kolom **wajib**:
-- `nama` → Nama peternakan/kandang
-- `latitude` → Koordinat lintang (decimal degrees)
-- `longitude` → Koordinat bujur
-- `jenis_ternak` → Sapi / Kambing / Ayam / dll
-- `jumlah_ekor` → Jumlah ternak
-
-Contoh baris:
+```bash
+earthengine authenticate
 ```
+
+Jika akun membutuhkan Google Cloud Project, tambahkan `GEE_PROJECT` ke Streamlit Secrets.
+
+## Format CSV Upload
+
+Kolom wajib:
+
+```csv
 nama,latitude,longitude,jenis_ternak,jumlah_ekor
-Peternakan Sapi Cijeruk,-6.597,106.797,Sapi,45
-Kandang Kambing Parung,-6.421,106.712,Kambing,120
 ```
 
-Aplikasi sudah include **sample data** Indonesia kalau tidak upload CSV.
+Kolom opsional:
 
-## 🚀 Cara Pakai
+```csv
+provinsi,tahun,sumber,jenis_data,keterangan
+```
 
-1. Buka app → lihat peta dengan sample data
-2. Upload CSV sendiri via sidebar (akan ganti sample)
-3. Pilih nama peternakan di dropdown
-4. Klik tombol **"Analisis Sentinel-2 Sekarang"**
-5. Lihat nilai NDVI + interpretasi otomatis
+## Catatan Data
 
-**Interpretasi NDVI cepat:**
-- > 0.6  → Vegetasi sangat sehat (pakan bagus)
-- 0.4 - 0.6 → Sedang
-- < 0.4  → Perlu perhatian (kekeringan / lahan kurang hijau)
+Data bawaan adalah data agregat provinsi. Karena BPS tidak menyajikan koordinat kandang individu pada tabel tersebut, koordinat yang digunakan adalah titik representatif ibu kota provinsi untuk visualisasi peta. Untuk analisis kondisi peternakan nyata, upload CSV berisi koordinat kandang atau lahan pakan yang aktual.
 
-## 🌍 Data Satelit yang Dipakai
-
-- **Sentinel-2 SR Harmonized** (resolusi 10m)
-- Filter: 30 hari terakhir + cloud < 20%
-- NDVI = (NIR - Red) / (NIR + Red) → band B8 & B4
-- Diambil rata-rata dalam buffer 500 meter
-
-Semua data **gratis** dan open.
-
-## 📌 Catatan Penting & Troubleshooting
-
-- **Error "Earth Engine client library not initialized"**:
-  - Jalankan `earthengine authenticate` lagi
-  - Atau tambahkan `ee.Initialize(project="nama-project")` di app.py
-
-- **Query lambat / timeout**: Normal untuk pertama kali. GEE butuh waktu inisialisasi.
-
-- **Deploy ke Streamlit Cloud**:
-  - Push ke GitHub
-  - Di Streamlit Cloud → Settings → Secrets, tambahkan:
-    ```
-    EARTHENGINE_TOKEN = "isi token dari earthengine authenticate --token"
-    ```
-  - Modifikasi app.py untuk baca dari `st.secrets`
-
-- Untuk fitur lebih advanced (time-series NDVI, multi-buffer, klasifikasi lahan) bisa pakai `leafmap` atau `geemap` nanti.
-
-## 🔧 Pengembangan Selanjutnya (Saran)
-
-- Tambah time-series NDVI 1 tahun
-- Buffer analysis + luas lahan hijau
-- Integrasi data desa/kabupaten Indonesia (Ina-Geoportal)
-- Notifikasi jika NDVI turun drastis
-- Multi-user + database (PostgreSQL)
-- Export laporan PDF otomatis
-
----
-
-**Dibuat oleh Rex buat Boss** — siap dikustomisasi lebih lanjut.  
-Kalau butuh tambahan fitur, perbaikan, atau versi dengan `leafmap` yang lebih powerful, bilang aja.
-
-Selamat monitoring peternakannya! 🐮🌿
+Sumber utama: Badan Pusat Statistik (BPS), tabel **Populasi Ternak Menurut Provinsi dan Jenis Ternak (ekor), 2024** dan publikasi **Peternakan Dalam Angka 2025**.
