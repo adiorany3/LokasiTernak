@@ -11,9 +11,11 @@ import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 
 
-# ==================== KONFIGURASI DASAR ====================
+# ============================================================
+# KONFIGURASI DASAR
+# ============================================================
 APP_TITLE = "Dashboard Peternakan Indonesia"
-DEVELOPER_NAME = "Marcus Thorne"
+DEVELOPER_NAME = "Galuh Adi Insani"
 
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 
@@ -24,7 +26,9 @@ BPS_TABLE_URL = (
 )
 
 
-# ==================== PAGE CONFIG ====================
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 st.set_page_config(
     page_title=APP_TITLE,
     page_icon="🐄",
@@ -33,8 +37,10 @@ st.set_page_config(
 )
 
 
-# ==================== HIDE STREAMLIT BRANDING ====================
-def hide_streamlit_branding() -> None:
+# ============================================================
+# HIDE STREAMLIT BRANDING + CUSTOM STYLE
+# ============================================================
+def hide_streamlit_branding():
     st.markdown(
         """
         <style>
@@ -95,6 +101,7 @@ def hide_streamlit_branding() -> None:
                 padding: 0.85rem 1rem;
                 border-radius: 0.7rem;
                 color: #334155;
+                margin-bottom: 1rem;
             }
         </style>
         """,
@@ -105,47 +112,46 @@ def hide_streamlit_branding() -> None:
 hide_streamlit_branding()
 
 
-# ==================== HEADER ====================
+# ============================================================
+# HEADER
+# ============================================================
 st.title("🐄 Dashboard Peternakan Indonesia")
 st.subheader("Data agregat resmi + pemetaan interaktif + analisis NDVI Sentinel-2")
 
 st.markdown(
     """
     <div class="source-note">
-    <b>Status data:</b> data bawaan aplikasi sudah diganti dari data sintetis menjadi
+    <b>Status data:</b> data bawaan aplikasi menggunakan
     <b>data agregat provinsi BPS 2024</b> untuk populasi sapi perah dan sapi potong.
-    Titik pada peta adalah <b>koordinat representatif ibu kota provinsi</b>, bukan titik kandang individu.
-    Untuk analisis kandang nyata, gunakan menu <b>Upload CSV Sendiri</b> berisi koordinat peternakan asli.
+    Titik pada peta adalah <b>koordinat representatif ibu kota provinsi</b>,
+    bukan titik kandang individu. Untuk analisis kandang nyata, gunakan menu
+    <b>Upload CSV Sendiri</b> berisi koordinat peternakan asli.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 
-# ==================== GOOGLE EARTH ENGINE ====================
-def _safe_get_secret(key: str, default=None):
+# ============================================================
+# GOOGLE EARTH ENGINE
+# ============================================================
+def safe_secret_get(key, default=None):
+    """Ambil secret dengan aman."""
     try:
         return st.secrets.get(key, default)
     except Exception:
         return default
 
 
-def _read_gee_project() -> str | None:
-    project = _safe_get_secret("GEE_PROJECT", None)
-    if project:
-        return str(project).strip()
-    return None
-
-
-def _normalize_private_key(private_key: str) -> str:
+def normalize_private_key(private_key):
     """
-    Membersihkan format private key dari Streamlit Secrets.
-    Mendukung format:
-    - multiline asli TOML
-    - string JSON dengan \\n
+    Membersihkan private key dari Streamlit Secrets.
+
+    Mendukung:
+    1. Private key multiline TOML asli.
+    2. Private key JSON yang masih memakai \\n.
     """
     private_key = str(private_key)
-
     private_key = private_key.replace("\\n", "\n")
     private_key = private_key.strip()
 
@@ -161,16 +167,36 @@ def _normalize_private_key(private_key: str) -> str:
     return private_key
 
 
-def _read_service_account_info() -> dict | None:
+def read_gee_project():
+    """Ambil GEE_PROJECT dari Streamlit Secrets."""
+    project = safe_secret_get("GEE_PROJECT", None)
+    if project:
+        return str(project).strip()
+    return None
+
+
+def read_service_account_info():
     """
-    Membaca credential service account dari Streamlit Secrets.
+    Membaca Service Account dari Streamlit Secrets.
 
-    Mendukung 2 format:
-    1. TOML table:
-       [gcp_service_account]
+    Format yang didukung:
 
-    2. JSON string:
-       GEE_SERVICE_ACCOUNT_JSON = "{...}"
+    GEE_PROJECT = "project-id"
+
+    [gcp_service_account]
+    type = "service_account"
+    project_id = "project-id"
+    private_key_id = "..."
+    private_key = \"\"\"-----BEGIN PRIVATE KEY-----
+    ...
+    -----END PRIVATE KEY-----\"\"\"
+    client_email = "..."
+    client_id = "..."
+    token_uri = "https://oauth2.googleapis.com/token"
+
+    Atau:
+
+    GEE_SERVICE_ACCOUNT_JSON = "{...json penuh...}"
     """
     try:
         if "gcp_service_account" in st.secrets:
@@ -187,7 +213,7 @@ def _read_service_account_info() -> dict | None:
             return None
 
         if "private_key" in info and info["private_key"]:
-            info["private_key"] = _normalize_private_key(info["private_key"])
+            info["private_key"] = normalize_private_key(info["private_key"])
 
         return info
 
@@ -198,18 +224,18 @@ def _read_service_account_info() -> dict | None:
         return None
 
 
-def initialize_gee() -> bool:
+def initialize_gee():
     """
     Inisialisasi Google Earth Engine.
 
-    Untuk Streamlit Cloud:
-    - Wajib pakai Service Account dari Streamlit Secrets.
+    Streamlit Cloud:
+    - Pakai Service Account dari Streamlit Secrets.
 
-    Untuk lokal:
-    - Bisa fallback ke credential hasil earthengine authenticate.
+    Lokal:
+    - Fallback ke earthengine authenticate jika tidak ada Service Account.
     """
-    project = _read_gee_project()
-    service_account_info = _read_service_account_info()
+    project = read_gee_project()
+    service_account_info = read_service_account_info()
 
     try:
         if service_account_info:
@@ -257,7 +283,7 @@ def initialize_gee() -> bool:
                 project=project or service_account_info.get("project_id"),
             )
 
-            # Tes ringan supaya error API/permission langsung muncul.
+            # Tes ringan agar error API/permission langsung kelihatan.
             ee.Number(1).getInfo()
 
             st.session_state["gee_init_mode"] = "Service Account Streamlit Secrets"
@@ -285,7 +311,9 @@ def initialize_gee() -> bool:
 gee_ready = initialize_gee()
 
 
-# ==================== STATUS GEE + DEBUG SECRETS ====================
+# ============================================================
+# SIDEBAR: STATUS GEE + DEBUG
+# ============================================================
 with st.sidebar.expander("Status Google Earth Engine", expanded=not gee_ready):
     if gee_ready:
         st.success(f"GEE aktif via {st.session_state.get('gee_init_mode', '-')}")
@@ -293,7 +321,8 @@ with st.sidebar.expander("Status Google Earth Engine", expanded=not gee_ready):
         st.warning("GEE belum aktif di Streamlit Cloud.")
         st.caption(
             "Pastikan Service Account sudah dimasukkan ke Streamlit Secrets, "
-            "Earth Engine API aktif, project sudah terdaftar Earth Engine, lalu Reboot app."
+            "Earth Engine API aktif, project sudah terdaftar Earth Engine, "
+            "role IAM benar, lalu Reboot app."
         )
 
         detail = st.session_state.get("gee_init_error", "")
@@ -310,8 +339,7 @@ with st.sidebar.expander("DEBUG Secrets", expanded=False):
         if "gcp_service_account" in st.secrets:
             sa = dict(st.secrets["gcp_service_account"])
             pk = str(sa.get("private_key", ""))
-
-            pk_normalized = _normalize_private_key(pk) if pk else ""
+            pk_normalized = normalize_private_key(pk) if pk else ""
 
             st.write("client_email ada:", bool(sa.get("client_email")))
             st.write("private_key ada:", bool(pk))
@@ -330,9 +358,12 @@ with st.sidebar.expander("DEBUG Secrets", expanded=False):
         st.code(str(e), language="text")
 
 
-# ==================== DATA LOADING ====================
+# ============================================================
+# LOAD DATA
+# ============================================================
 @st.cache_data(show_spinner=False)
-def load_default_data() -> pd.DataFrame:
+def load_default_data():
+    """Memuat CSV data BPS bawaan."""
     data_path = Path(DEFAULT_DATA_FILE)
 
     if not data_path.exists():
@@ -351,7 +382,8 @@ def load_default_data() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def clean_and_validate_data(df: pd.DataFrame) -> pd.DataFrame:
+def clean_and_validate_data(df):
+    """Validasi dan pembersihan data."""
     required_cols = [
         "nama",
         "latitude",
@@ -385,7 +417,9 @@ def clean_and_validate_data(df: pd.DataFrame) -> pd.DataFrame:
     return cleaned
 
 
-# ==================== SIDEBAR DATA SOURCE ====================
+# ============================================================
+# SIDEBAR: SUMBER DATA
+# ============================================================
 st.sidebar.header("📁 Sumber Data")
 
 data_source = st.sidebar.radio(
@@ -428,7 +462,9 @@ else:
 df = clean_and_validate_data(df)
 
 
-# ==================== FILTER DATA ====================
+# ============================================================
+# FILTER DATA
+# ============================================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔎 Filter")
 
@@ -462,7 +498,9 @@ if filtered_df.empty:
     st.stop()
 
 
-# ==================== RINGKASAN SIDEBAR ====================
+# ============================================================
+# SIDEBAR: RINGKASAN
+# ============================================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Ringkasan")
 
@@ -487,7 +525,9 @@ for jenis, total in jenis_count.items():
     st.sidebar.write(f"- {jenis}: {int(total):,} ekor".replace(",", "."))
 
 
-# ==================== PETA ====================
+# ============================================================
+# PETA
+# ============================================================
 st.header("🗺️ Peta Interaktif Populasi Ternak")
 
 color_map = {
@@ -506,8 +546,9 @@ color_map = {
 }
 
 
-def marker_radius(value: int) -> float:
-    return max(5, min(18, 3 + math.log10(max(value, 1)) * 2.2))
+def marker_radius(value):
+    """Radius marker agar data besar tidak menutupi peta."""
+    return max(5, min(18, 3 + math.log10(max(int(value), 1)) * 2.2))
 
 
 center_lat = filtered_df["latitude"].mean()
@@ -579,29 +620,42 @@ m.get_root().html.add_child(folium.Element(legend_html))
 folium.LayerControl().add_to(m)
 
 try:
+    # Versi baru Streamlit menyarankan width="stretch".
     st_folium(
         m,
         height=540,
-        use_container_width=True,
+        width="stretch",
         returned_objects=["last_object_clicked"],
         key="peta_peternakan_indonesia",
     )
 
 except TypeError:
-    st_folium(
-        m,
-        width=1200,
-        height=540,
-        returned_objects=["last_object_clicked"],
-        key="peta_peternakan_indonesia_fallback",
-    )
+    # Fallback jika streamlit-folium belum mendukung width="stretch".
+    try:
+        st_folium(
+            m,
+            height=540,
+            use_container_width=True,
+            returned_objects=["last_object_clicked"],
+            key="peta_peternakan_indonesia_fallback_container",
+        )
+    except TypeError:
+        st_folium(
+            m,
+            width=1200,
+            height=540,
+            returned_objects=["last_object_clicked"],
+            key="peta_peternakan_indonesia_fallback_width",
+        )
 
 except Exception as map_error:
     st.warning(f"Komponen streamlit-folium gagal dimuat: {map_error}")
     components.html(m.get_root().render(), height=560, scrolling=False)
 
 
-# ==================== ANALISIS SENTINEL-2 ====================
+# ============================================================
+# ANALISIS SENTINEL-2
+# ============================================================
 st.header("🛰️ Analisis NDVI Sentinel-2")
 
 st.info(
@@ -634,11 +688,18 @@ with col1:
     if "provinsi" in filtered_df.columns:
         st.write(f"**Provinsi:** {selected_row.get('provinsi', '-')}")
 
-    analyze_btn = st.button(
-        "🚀 Analisis NDVI",
-        type="primary",
-        use_container_width=True,
-    )
+    try:
+        analyze_btn = st.button(
+            "🚀 Analisis NDVI",
+            type="primary",
+            width="stretch",
+        )
+    except TypeError:
+        analyze_btn = st.button(
+            "🚀 Analisis NDVI",
+            type="primary",
+            use_container_width=True,
+        )
 
 with col2:
     if analyze_btn:
@@ -734,7 +795,9 @@ with col2:
                     st.error(f"Terjadi error saat mengambil data GEE: {e}")
 
 
-# ==================== STATISTIK ====================
+# ============================================================
+# STATISTIK
+# ============================================================
 st.markdown("---")
 st.header("📈 Statistik Populasi")
 
@@ -785,14 +848,23 @@ display_cols = [
     if col in filtered_df.columns
 ]
 
-st.dataframe(
-    filtered_df[display_cols],
-    use_container_width=True,
-    hide_index=True,
-)
+try:
+    st.dataframe(
+        filtered_df[display_cols],
+        width="stretch",
+        hide_index=True,
+    )
+except TypeError:
+    st.dataframe(
+        filtered_df[display_cols],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
-# ==================== CATATAN SUMBER & FOOTER ====================
+# ============================================================
+# CATATAN SUMBER & FOOTER
+# ============================================================
 st.markdown("---")
 
 st.caption(
