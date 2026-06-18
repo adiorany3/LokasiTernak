@@ -1,56 +1,58 @@
-# Dashboard Peternakan Indonesia + NDVI Sentinel-2
+# Dashboard Peternakan Indonesia
 
-Aplikasi web Streamlit untuk memetakan data peternakan Indonesia, menampilkan statistik populasi ternak, dan menganalisis NDVI Sentinel-2 menggunakan Google Earth Engine.
+Aplikasi Streamlit untuk pemetaan data peternakan Indonesia, visualisasi populasi ternak, dan analisis NDVI Sentinel-2 menggunakan Google Earth Engine.
 
-## Perubahan Versi Revisi
+## Isi ZIP
 
-- Data bawaan diganti dari data sintetis menjadi data agregat provinsi berbasis tabel BPS 2024.
-- Ditambahkan keterangan bahwa titik peta BPS adalah koordinat representatif ibu kota provinsi, bukan lokasi kandang individu.
-- Ditambahkan filter provinsi dan jenis ternak.
-- Tampilan peta diperbaiki dengan radius marker proporsional terhadap jumlah populasi.
-- Emblem/menu/footer bawaan Streamlit disembunyikan dengan CSS.
-- Footer custom ditambahkan: `Developed by Marcus Thorne`.
-- Catatan sumber data BPS ditampilkan di aplikasi.
-
-## File Utama
-
-- `app.py` — aplikasi Streamlit versi revisi.
-- `data_peternakan_indonesia_bps_2024.csv` — data bawaan agregat BPS 2024.
+- `app.py` — kode aplikasi utama.
 - `requirements.txt` — dependency Python.
+- `data_peternakan_indonesia_bps_2024.csv` — data bawaan agregat provinsi.
+- `contoh_format_upload_peternakan.csv` — contoh CSV terbaik untuk upload data kandang nyata.
+- `.streamlit/config.toml` — konfigurasi light theme agar tulisan/legend terbaca.
+- `.streamlit/secrets_TEMPLATE.toml` — template Secrets, jangan isi private key asli di GitHub.
 
-## Cara Menjalankan
+## Cara Menjalankan Lokal
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Setup Google Earth Engine
-
-Fitur peta dan statistik tetap berjalan tanpa Google Earth Engine. Untuk fitur NDVI, lakukan autentikasi:
-
-```bash
-earthengine authenticate
-```
-
-Jika akun membutuhkan Google Cloud Project, tambahkan `GEE_PROJECT` ke Streamlit Secrets.
-
 ## Format CSV Upload
 
 Kolom wajib:
+- `nama`
+- `latitude`
+- `longitude`
+- `jenis_ternak`
+- `jumlah_ekor`
 
-```csv
-nama,latitude,longitude,jenis_ternak,jumlah_ekor
-```
+Kolom rekomendasi:
+- `provinsi`
+- `kabupaten_kota`
+- `kecamatan`
+- `desa`
+- `alamat`
+- `luas_lahan_ha`
+- `sistem_pemeliharaan`
+- `sumber_pakan`
+- `tahun`
+- `sumber`
+- `keterangan`
 
-Kolom opsional:
+Contoh sudah tersedia di `contoh_format_upload_peternakan.csv`.
 
-```csv
-provinsi,tahun,sumber,jenis_data,keterangan
-```
+## Setting Google Earth Engine di Streamlit Cloud
 
-## Catatan Data
+1. Buat Google Cloud Project.
+2. Enable Earth Engine API.
+3. Register project untuk Google Earth Engine.
+4. Buat Service Account.
+5. Download JSON key.
+6. Paste ke Streamlit Cloud `Manage app -> Settings -> Secrets` menggunakan format pada `.streamlit/secrets_TEMPLATE.toml`.
+7. Reboot app.
 
-Data bawaan adalah data agregat provinsi. Karena BPS tidak menyajikan koordinat kandang individu pada tabel tersebut, koordinat yang digunakan adalah titik representatif ibu kota provinsi untuk visualisasi peta. Untuk analisis kondisi peternakan nyata, upload CSV berisi koordinat kandang atau lahan pakan yang aktual.
+## Catatan Keamanan
 
-Sumber utama: Badan Pusat Statistik (BPS), tabel **Populasi Ternak Menurut Provinsi dan Jenis Ternak (ekor), 2024** dan publikasi **Peternakan Dalam Angka 2025**.
+Jangan upload `secrets.toml` berisi private key asli ke GitHub.
+Jika private key pernah tersebar, revoke/hapus key lama dan buat JSON key baru.

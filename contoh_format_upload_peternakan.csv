@@ -1,0 +1,6 @@
+nama,provinsi,kabupaten_kota,kecamatan,desa,alamat,latitude,longitude,jenis_ternak,jumlah_ekor,luas_lahan_ha,sistem_pemeliharaan,sumber_pakan,tahun,sumber,keterangan
+Peternakan Sapi Makmur,Jawa Barat,Bogor,Cijeruk,Cipelang,Jl. Raya Cijeruk,-6.704512,106.821345,Sapi Potong,75,1.5,Intensif,Rumput gajah dan konsentrat,2024,Survei Lapangan,Titik koordinat kandang utama
+Kandang Sapi Perah Lestari,Jawa Timur,Malang,Pujon,Pandesari,Jl. Peternakan Pujon,-7.84321,112.45589,Sapi Perah,42,2.0,Semi Intensif,Rumput odot dan silase,2024,Survei Lapangan,Dekat area hijauan pakan
+Peternakan Kambing Barokah,Jawa Tengah,Boyolali,Ampel,Candi,Jl. Desa Candi,-7.444876,110.583921,Kambing,120,0.8,Intensif,Rumput lapang dan limbah pertanian,2024,Data Peternak,Titik kandang utama
+Kandang Ayam Sejahtera,DI Yogyakarta,Sleman,Ngaglik,Sariharjo,Jl. Kaliurang,-7.709876,110.388765,Ayam,2500,0.6,Intensif,Pakan pabrikan,2024,Survei Lapangan,Kandang ayam broiler
+Peternakan Domba Mandiri,Jawa Barat,Garut,Tarogong Kaler,Rancabango,Jl. Rancabango,-7.193456,107.889321,Domba,95,1.1,Semi Intensif,Rumput lapang,2024,Survei Lapangan,Titik kandang dan area pakan

@@ -44,7 +44,6 @@ def apply_custom_style():
     st.markdown(
         """
         <style>
-            /* Paksa tampilan utama tetap terang */
             :root {
                 --background-color: #ffffff !important;
                 --secondary-background-color: #f8fafc !important;
@@ -74,7 +73,6 @@ def apply_custom_style():
                 color: #111827 !important;
             }
 
-            /* Sembunyikan emblem/menu bawaan Streamlit */
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
@@ -140,7 +138,6 @@ def apply_custom_style():
                 z-index: 999999;
             }
 
-            /* Supaya input/filter tetap terbaca */
             input, textarea, select {
                 color: #111827 !important;
                 background-color: #ffffff !important;
