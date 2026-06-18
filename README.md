@@ -23,7 +23,7 @@ Aplikasi Streamlit untuk pemetaan data peternakan, analisis kondisi hijauan/paka
 7. Skor kondisi hijauan/pakan.
 8. Rekomendasi otomatis untuk peternak.
 9. Kepadatan ternak per hektare jika ada kolom `luas_lahan_ha`.
-10. Download laporan ringkas CSV.
+10. Download laporan ringkas XLSX.
 
 ## Cara Menjalankan Lokal
 
@@ -78,3 +78,8 @@ Kolom rekomendasi:
 
 Jangan upload `secrets.toml` yang berisi private key asli ke GitHub.
 Jika private key pernah tersebar, revoke/hapus key lama dan buat key JSON baru.
+
+
+## Laporan XLSX
+
+Tombol laporan pada aplikasi sekarang hanya menghasilkan file `.xlsx`. Workbook laporan berisi sheet `Laporan Ringkas`, `Tren NDVI 90 Hari`, dan `Rekomendasi`.

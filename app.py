@@ -1,7 +1,8 @@
 import json
 import math
+import re
 from datetime import datetime, timedelta
-from io import StringIO
+from io import BytesIO
 from pathlib import Path
 
 import ee
@@ -577,6 +578,63 @@ def build_recommendation_report(row, ndvi_value=None, trend_df=None):
     return pd.DataFrame([report])
 
 
+
+def safe_filename(text):
+    """Membersihkan nama file agar aman untuk download."""
+    text = str(text).strip().replace(" ", "_")
+    text = re.sub(r"[^A-Za-z0-9_\\-]", "", text)
+    return text or "laporan_peternakan"
+
+
+def create_xlsx_report_bytes(report_df, trend_df=None, rekomendasi=None):
+    """
+    Membuat laporan ringkas format XLSX dalam memory.
+    Sheet:
+    1. Laporan Ringkas
+    2. Tren NDVI 90 Hari
+    3. Rekomendasi
+    """
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        report_df.to_excel(writer, index=False, sheet_name="Laporan Ringkas")
+
+        if trend_df is not None and not trend_df.empty:
+            trend_df.to_excel(writer, index=False, sheet_name="Tren NDVI 90 Hari")
+
+        if rekomendasi:
+            rec_df = pd.DataFrame({
+                "No": list(range(1, len(rekomendasi) + 1)),
+                "Rekomendasi": rekomendasi,
+            })
+            rec_df.to_excel(writer, index=False, sheet_name="Rekomendasi")
+
+        workbook = writer.book
+
+        for sheet_name in workbook.sheetnames:
+            ws = workbook[sheet_name]
+            ws.freeze_panes = "A2"
+
+            for cell in ws[1]:
+                cell.font = cell.font.copy(bold=True, color="FFFFFF")
+                cell.fill = cell.fill.copy(fill_type="solid", fgColor="16A34A")
+                cell.alignment = cell.alignment.copy(horizontal="center", vertical="center", wrap_text=True)
+
+            for column_cells in ws.columns:
+                max_length = 0
+                col_letter = column_cells[0].column_letter
+                for cell in column_cells:
+                    value = "" if cell.value is None else str(cell.value)
+                    max_length = max(max_length, len(value))
+                    cell.alignment = cell.alignment.copy(vertical="top", wrap_text=True)
+
+                adjusted_width = min(max(max_length + 2, 12), 42)
+                ws.column_dimensions[col_letter].width = adjusted_width
+
+    output.seek(0)
+    return output.getvalue()
+
+
 def get_ndvi_mean(point, start_date, end_date, cloud_threshold=30, buffer_meter=500):
     s2 = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
@@ -881,13 +939,17 @@ if run_ndvi:
                 for i, rec in enumerate(combined_recs, start=1):
                     st.write(f"{i}. {rec}")
 
-                csv_buffer = StringIO()
-                report_df.to_csv(csv_buffer, index=False)
+                xlsx_data = create_xlsx_report_bytes(
+                    report_df=report_df,
+                    trend_df=trend_df,
+                    rekomendasi=combined_recs,
+                )
+
                 st.download_button(
-                    "⬇️ Download Laporan Ringkas CSV",
-                    data=csv_buffer.getvalue(),
-                    file_name=f"laporan_peternakan_{selected_name.replace(' ', '_')}.csv",
-                    mime="text/csv",
+                    "⬇️ Download Laporan Ringkas XLSX",
+                    data=xlsx_data,
+                    file_name=f"laporan_peternakan_{safe_filename(selected_name)}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
             except Exception as e:
