@@ -83,3 +83,15 @@ Jika private key pernah tersebar, revoke/hapus key lama dan buat key JSON baru.
 ## Laporan XLSX
 
 Tombol laporan pada aplikasi sekarang hanya menghasilkan file `.xlsx`. Workbook laporan berisi sheet `Laporan Ringkas`, `Tren NDVI 90 Hari`, dan `Rekomendasi`.
+
+## Insight Awam yang Ditambahkan
+
+Versi ini menambahkan:
+- Kesimpulan otomatis dalam bahasa sederhana.
+- Skor Kondisi Peternakan 0–100.
+- Status lampu warna: hijau, kuning, oranye, merah.
+- Risiko kekurangan pakan.
+- Estimasi kebutuhan pakan harian.
+- Prioritas tindakan hari ini.
+- Catatan validasi titik koordinat agar peternak tidak salah membaca NDVI.
+- Laporan XLSX yang memuat skor, risiko, estimasi pakan, kesimpulan awam, tren NDVI, dan rekomendasi.

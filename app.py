@@ -540,17 +540,247 @@ def density_insight(jenis_ternak, jumlah_ekor, luas_lahan_ha):
     return density, status, recs
 
 
-def build_recommendation_report(row, ndvi_value=None, trend_df=None):
+
+def calculate_trend_change(trend_df):
+    """Menghitung perubahan NDVI dari awal ke akhir periode 90 hari."""
+    if trend_df is None or trend_df.empty or "ndvi" not in trend_df.columns:
+        return None
+
+    valid = trend_df["ndvi"].dropna()
+    if len(valid) < 2:
+        return None
+
+    first = float(valid.iloc[0])
+    last = float(valid.iloc[-1])
+
+    if first == 0:
+        return None
+
+    return ((last - first) / abs(first)) * 100
+
+
+def estimate_feed_requirement(jenis_ternak, jumlah_ekor):
+    """
+    Estimasi kebutuhan pakan harian sederhana.
+    Angka ini bersifat pendekatan umum agar peternak awam memahami skala kebutuhan pakan.
+    """
+    jenis = str(jenis_ternak).lower()
+    jumlah = int(jumlah_ekor)
+
+    if "sapi perah" in jenis:
+        min_kg, max_kg, satuan = 30, 40, "kg hijauan/ekor/hari"
+    elif "sapi" in jenis or "kerbau" in jenis:
+        min_kg, max_kg, satuan = 25, 35, "kg hijauan/ekor/hari"
+    elif "kambing" in jenis or "domba" in jenis:
+        min_kg, max_kg, satuan = 3, 5, "kg hijauan/ekor/hari"
+    elif "ayam" in jenis or "itik" in jenis:
+        # Pakan unggas lebih relevan dihitung gram pakan jadi per hari.
+        min_kg, max_kg, satuan = 0.08, 0.12, "kg pakan/ekor/hari"
+    else:
+        min_kg, max_kg, satuan = 2, 5, "kg pakan/ekor/hari"
+
+    total_min = jumlah * min_kg
+    total_max = jumlah * max_kg
+
+    return {
+        "min_per_ekor": min_kg,
+        "max_per_ekor": max_kg,
+        "total_min": total_min,
+        "total_max": total_max,
+        "satuan": satuan,
+        "teks": f"±{total_min:,.0f}–{total_max:,.0f} kg/hari".replace(",", "."),
+    }
+
+
+def calculate_peternakan_score(ndvi_value, trend_change, density_status):
+    """
+    Skor 0–100 agar peternak awam mudah membaca kondisi.
+    Bobot:
+    - NDVI/kondisi hijauan: 50%
+    - Tren NDVI 90 hari: 25%
+    - Kepadatan ternak: 25%
+    """
+    if ndvi_value is None:
+        ndvi_score = 50
+    elif ndvi_value > 0.65:
+        ndvi_score = 92
+    elif ndvi_value > 0.45:
+        ndvi_score = 75
+    elif ndvi_value > 0.25:
+        ndvi_score = 50
+    else:
+        ndvi_score = 25
+
+    if trend_change is None:
+        trend_score = 60
+    elif trend_change > 10:
+        trend_score = 85
+    elif trend_change >= -10:
+        trend_score = 70
+    elif trend_change >= -25:
+        trend_score = 45
+    else:
+        trend_score = 25
+
+    density_text = str(density_status).lower()
+    if "belum tersedia" in density_text:
+        density_score = 60
+    elif "rendah" in density_text or "sedang" in density_text:
+        density_score = 85
+    elif "sangat tinggi" in density_text:
+        density_score = 30
+    elif "tinggi" in density_text:
+        density_score = 55
+    else:
+        density_score = 60
+
+    score = round((ndvi_score * 0.50) + (trend_score * 0.25) + (density_score * 0.25))
+
+    if score >= 80:
+        lampu = "🟢"
+        label = "Sangat Baik"
+        risiko = "Rendah"
+        arti = "Kondisi hijauan dan kepadatan relatif mendukung."
+    elif score >= 60:
+        lampu = "🟡"
+        label = "Baik / Perlu Dipantau"
+        risiko = "Sedang"
+        arti = "Kondisi masih cukup baik, tetapi tetap perlu monitoring."
+    elif score >= 40:
+        lampu = "🟠"
+        label = "Perlu Perhatian"
+        risiko = "Cukup Tinggi"
+        arti = "Ada tanda kondisi pakan/hijauan atau kepadatan mulai perlu diwaspadai."
+    else:
+        lampu = "🔴"
+        label = "Risiko Tinggi"
+        risiko = "Tinggi"
+        arti = "Perlu tindakan cepat agar kebutuhan pakan dan kondisi ternak tetap aman."
+
+    return {
+        "score": score,
+        "lampu": lampu,
+        "label": label,
+        "risiko": risiko,
+        "arti": arti,
+        "ndvi_score": ndvi_score,
+        "trend_score": trend_score,
+        "density_score": density_score,
+    }
+
+
+def explain_ndvi_simple(ndvi_value):
+    """Penjelasan NDVI dalam bahasa awam."""
+    if ndvi_value is None:
+        return "Nilai NDVI belum tersedia. Aplikasi belum bisa membaca kondisi hijauan dari citra satelit pada periode ini."
+    if ndvi_value > 0.65:
+        return "Angka NDVI menunjukkan rumput atau vegetasi di sekitar lokasi tampak sangat hijau dan sehat."
+    if ndvi_value > 0.45:
+        return "Angka NDVI menunjukkan hijauan masih cukup, tetapi tetap perlu dipantau agar tidak menurun."
+    if ndvi_value > 0.25:
+        return "Angka NDVI menunjukkan hijauan mulai rendah. Rumput bisa kurang lebat, mulai kering, atau area sekitar bercampur bangunan/lahan terbuka."
+    return "Angka NDVI sangat rendah. Kemungkinan area sekitar titik kurang hijau, kering, dominan bangunan/jalan/air, atau koordinat tidak tepat di lahan hijauan."
+
+
+def build_simple_summary(row, ndvi_value, trend_change, score_info, density_status, feed_info):
+    """Kesimpulan singkat yang mudah dipahami peternak."""
+    nama = row.get("nama", "Lokasi")
+    jenis = row.get("jenis_ternak", "ternak")
+    jumlah = int(row.get("jumlah_ekor", 0))
+
+    if trend_change is None:
+        trend_text = "tren 90 hari belum cukup terbaca"
+    elif trend_change < -10:
+        trend_text = f"tren hijauan menurun sekitar {abs(trend_change):.1f}% dalam 90 hari"
+    elif trend_change > 10:
+        trend_text = f"tren hijauan membaik sekitar {trend_change:.1f}% dalam 90 hari"
+    else:
+        trend_text = "tren hijauan relatif stabil dalam 90 hari"
+
+    return (
+        f"{score_info['lampu']} Kondisi di {nama} berada pada kategori **{score_info['label']}** "
+        f"dengan skor **{score_info['score']}/100**. "
+        f"Data menunjukkan {explain_ndvi_simple(ndvi_value)} "
+        f"Selain itu, {trend_text}. "
+        f"Dengan jumlah {jumlah:,} ekor {jenis}, estimasi kebutuhan pakan harian sekitar "
+        f"**{feed_info['teks']}**. Status kepadatan: **{density_status}**."
+    ).replace(",", ".")
+
+
+def build_daily_priority_actions(score_info, ndvi_value, trend_change, density_status):
+    """Prioritas tindakan praktis untuk hari ini."""
+    actions = []
+
+    if score_info["risiko"] in ["Tinggi", "Cukup Tinggi"]:
+        actions.append("Cek stok pakan hari ini dan siapkan pakan cadangan minimal 7 hari.")
+    else:
+        actions.append("Cek stok pakan dan pastikan cukup untuk beberapa hari ke depan.")
+
+    actions.append("Pastikan air minum ternak tersedia dan bersih.")
+
+    if ndvi_value is None:
+        actions.append("Cek ulang koordinat dan coba analisis lagi dengan periode/awan yang lebih longgar.")
+    elif ndvi_value <= 0.45:
+        actions.append("Periksa kondisi rumput/lahan hijauan di sekitar kandang karena hijauan mulai rendah.")
+    else:
+        actions.append("Pertahankan area hijauan yang masih baik dan lakukan monitoring berkala.")
+
+    if trend_change is not None and trend_change < -10:
+        actions.append("Karena tren hijauan menurun, mulai tambah sumber pakan dari luar lahan.")
+
+    if "sangat tinggi" in str(density_status).lower() or "tinggi" in str(density_status).lower():
+        actions.append("Evaluasi kepadatan kandang/lahan karena kebutuhan pakan dan sanitasi meningkat.")
+
+    actions.append("Catat perubahan kondisi ternak: nafsu makan, minum, aktivitas, dan gejala sakit.")
+
+    return actions
+
+
+def coordinate_validation_note(ndvi_value):
+    """Peringatan agar peternak tidak salah tafsir jika titik berada di bangunan/jalan."""
+    if ndvi_value is None or ndvi_value <= 0.25:
+        return (
+            "Catatan koordinat: jika lokasi sebenarnya memiliki rumput/hijauan tetapi NDVI sangat rendah, "
+            "pastikan titik koordinat tidak berada tepat di atap kandang, jalan, bangunan, sungai, atau area kosong. "
+            "Untuk analisis pakan, titik terbaik adalah lahan hijauan/pakan."
+        )
+    return (
+        "Catatan koordinat: untuk hasil lebih akurat, gunakan titik kandang terbuka atau lahan hijauan/pakan, "
+        "bukan kantor desa atau titik administratif."
+    )
+
+
+def build_recommendation_report(row, ndvi_value=None, trend_df=None, score_info=None, feed_info=None, density=None, density_status=None, kesimpulan_awam=None):
     status, desc, _, ndvi_recs = classify_ndvi(ndvi_value)
 
     luas = row.get("luas_lahan_ha", None) if "luas_lahan_ha" in row.index else None
-    density, density_status, density_recs = density_insight(
-        row.get("jenis_ternak", "-"),
-        int(row.get("jumlah_ekor", 0)),
-        luas,
-    )
+
+    if density is None or density_status is None:
+        density, density_status, density_recs = density_insight(
+            row.get("jenis_ternak", "-"),
+            int(row.get("jumlah_ekor", 0)),
+            luas,
+        )
+    else:
+        _, _, density_recs = density_insight(
+            row.get("jenis_ternak", "-"),
+            int(row.get("jumlah_ekor", 0)),
+            luas,
+        )
+
+    trend_change = calculate_trend_change(trend_df)
+
+    if feed_info is None:
+        feed_info = estimate_feed_requirement(row.get("jenis_ternak", "-"), int(row.get("jumlah_ekor", 0)))
+
+    if score_info is None:
+        score_info = calculate_peternakan_score(ndvi_value, trend_change, density_status)
+
+    if kesimpulan_awam is None:
+        kesimpulan_awam = build_simple_summary(row, ndvi_value, trend_change, score_info, density_status, feed_info)
 
     report = {
+        "tanggal_analisis": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "nama": row.get("nama", "-"),
         "jenis_ternak": row.get("jenis_ternak", "-"),
         "jumlah_ekor": int(row.get("jumlah_ekor", 0)),
@@ -559,24 +789,21 @@ def build_recommendation_report(row, ndvi_value=None, trend_df=None):
         "ndvi": ndvi_value,
         "status_hijauan": status,
         "keterangan_hijauan": desc,
+        "perubahan_ndvi_90_hari_persen": trend_change,
+        "skor_kondisi_peternakan": score_info["score"],
+        "status_lampu": f"{score_info['lampu']} {score_info['label']}",
+        "risiko_kekurangan_pakan": score_info["risiko"],
+        "estimasi_pakan_min_kg_hari": feed_info["total_min"],
+        "estimasi_pakan_max_kg_hari": feed_info["total_max"],
+        "estimasi_pakan_teks": feed_info["teks"],
         "kepadatan_ekor_per_ha": density,
         "status_kepadatan": density_status,
-        "tanggal_analisis": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "kesimpulan_awam": kesimpulan_awam,
+        "catatan_koordinat": coordinate_validation_note(ndvi_value),
+        "rekomendasi": " | ".join(ndvi_recs + density_recs),
     }
 
-    if trend_df is not None and not trend_df.empty and trend_df["ndvi"].notna().sum() >= 2:
-        first = trend_df["ndvi"].dropna().iloc[0]
-        last = trend_df["ndvi"].dropna().iloc[-1]
-        change = ((last - first) / abs(first)) * 100 if first != 0 else None
-        report["perubahan_ndvi_90_hari_persen"] = change
-    else:
-        report["perubahan_ndvi_90_hari_persen"] = None
-
-    all_recs = ndvi_recs + density_recs
-    report["rekomendasi"] = " | ".join(all_recs)
-
     return pd.DataFrame([report])
-
 
 
 def safe_filename(text):
@@ -903,7 +1130,68 @@ if run_ndvi:
                 trend_df = get_ndvi_trend_90_days(point, cloud_threshold, buffer_meter)
 
                 status, desc, color, ndvi_recs = classify_ndvi(ndvi_value)
-                report_df = build_recommendation_report(selected_row, ndvi_value, trend_df)
+                trend_change = calculate_trend_change(trend_df)
+                feed_info = estimate_feed_requirement(
+                    selected_row.get("jenis_ternak", "-"),
+                    int(selected_row.get("jumlah_ekor", 0)),
+                )
+                score_info = calculate_peternakan_score(ndvi_value, trend_change, density_status)
+                kesimpulan_awam = build_simple_summary(
+                    selected_row,
+                    ndvi_value,
+                    trend_change,
+                    score_info,
+                    density_status,
+                    feed_info,
+                )
+                priority_actions = build_daily_priority_actions(
+                    score_info,
+                    ndvi_value,
+                    trend_change,
+                    density_status,
+                )
+                coord_note = coordinate_validation_note(ndvi_value)
+
+                report_df = build_recommendation_report(
+                    selected_row,
+                    ndvi_value,
+                    trend_df,
+                    score_info=score_info,
+                    feed_info=feed_info,
+                    density=density,
+                    density_status=density_status,
+                    kesimpulan_awam=kesimpulan_awam,
+                )
+
+                st.subheader("Kesimpulan Mudah Dipahami")
+                st.markdown(kesimpulan_awam)
+
+                insight_cols = st.columns(4)
+                with insight_cols[0]:
+                    st.metric("Skor Kondisi", f"{score_info['score']}/100", score_info["label"])
+                with insight_cols[1]:
+                    st.metric("Status", f"{score_info['lampu']} {score_info['label']}")
+                with insight_cols[2]:
+                    st.metric("Risiko Pakan", score_info["risiko"])
+                with insight_cols[3]:
+                    st.metric("Estimasi Pakan", feed_info["teks"])
+
+                with st.expander("Arti hasil pengamatan untuk peternak awam", expanded=True):
+                    st.write(f"**Arti NDVI:** {explain_ndvi_simple(ndvi_value)}")
+                    if trend_change is None:
+                        st.write("**Tren 90 hari:** belum cukup data untuk menyimpulkan perubahan.")
+                    elif trend_change < -10:
+                        st.write(f"**Tren 90 hari:** menurun sekitar {abs(trend_change):.1f}%. Ketersediaan hijauan perlu diwaspadai.")
+                    elif trend_change > 10:
+                        st.write(f"**Tren 90 hari:** naik sekitar {trend_change:.1f}%. Kondisi hijauan cenderung membaik.")
+                    else:
+                        st.write(f"**Tren 90 hari:** relatif stabil, perubahan sekitar {trend_change:.1f}%.")
+                    st.write(f"**Kebutuhan pakan:** {feed_info['teks']} untuk {int(selected_row.get('jumlah_ekor', 0)):,} ekor.".replace(",", "."))
+                    st.info(coord_note)
+
+                st.subheader("Prioritas Tindakan Hari Ini")
+                for i, action in enumerate(priority_actions, start=1):
+                    st.write(f"{i}. {action}")
 
                 st.subheader("Hasil Kondisi Hijauan")
                 if ndvi_value is None:
@@ -935,7 +1223,7 @@ if run_ndvi:
                             st.info(f"Perubahan NDVI sekitar {change:.1f}%. Kondisi hijauan relatif stabil.")
 
                 st.subheader("Rekomendasi Otomatis untuk Peternak")
-                combined_recs = ndvi_recs + density_recs
+                combined_recs = priority_actions + ndvi_recs + density_recs
                 for i, rec in enumerate(combined_recs, start=1):
                     st.write(f"{i}. {rec}")
 
