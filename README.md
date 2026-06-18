@@ -95,3 +95,8 @@ Versi ini menambahkan:
 - Prioritas tindakan hari ini.
 - Catatan validasi titik koordinat agar peternak tidak salah membaca NDVI.
 - Laporan XLSX yang memuat skor, risiko, estimasi pakan, kesimpulan awam, tren NDVI, dan rekomendasi.
+
+
+## Catatan Luas Lahan
+
+Pada contoh file `contoh_format_upload_peternakan.xlsx`, sheet `Petunjuk` sudah ditambahkan catatan: **Tambahkan `luas_lahan_ha` pada CSV/XLSX untuk insight lebih baik**. Kolom ini dipakai aplikasi untuk menghitung kepadatan ternak per hektare.
