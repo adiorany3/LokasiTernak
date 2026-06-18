@@ -15,7 +15,7 @@ from streamlit_folium import st_folium
 # KONFIGURASI DASAR
 # ============================================================
 APP_TITLE = "Dashboard Peternakan Indonesia"
-DEVELOPER_NAME = "Marcus Thorne"
+DEVELOPER_NAME = "Galuh Adi Insani"
 
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 
