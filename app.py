@@ -38,12 +38,43 @@ st.set_page_config(
 
 
 # ============================================================
-# HIDE STREAMLIT BRANDING + CUSTOM STYLE
+# STYLE: PAKSA LIGHT THEME + HIDE STREAMLIT BRANDING
 # ============================================================
-def hide_streamlit_branding():
+def apply_custom_style():
     st.markdown(
         """
         <style>
+            /* Paksa tampilan utama tetap terang */
+            :root {
+                --background-color: #ffffff !important;
+                --secondary-background-color: #f8fafc !important;
+                --text-color: #111827 !important;
+                --primary-color: #16a34a !important;
+            }
+
+            html, body, .stApp {
+                background-color: #ffffff !important;
+                color: #111827 !important;
+            }
+
+            section[data-testid="stSidebar"] {
+                background-color: #f8fafc !important;
+                color: #111827 !important;
+            }
+
+            section[data-testid="stSidebar"] * {
+                color: #111827 !important;
+            }
+
+            div[data-testid="stMarkdownContainer"] {
+                color: #111827 !important;
+            }
+
+            h1, h2, h3, h4, h5, h6, p, span, label {
+                color: #111827 !important;
+            }
+
+            /* Sembunyikan emblem/menu bawaan Streamlit */
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
@@ -81,27 +112,47 @@ def hide_streamlit_branding():
                 padding-bottom: 5rem;
             }
 
+            .source-note {
+                background: #f8fafc !important;
+                border: 1px solid #e2e8f0 !important;
+                padding: 0.85rem 1rem;
+                border-radius: 0.7rem;
+                color: #111827 !important;
+                margin-bottom: 1rem;
+            }
+
+            .source-note * {
+                color: #111827 !important;
+            }
+
             .custom-footer {
                 position: fixed;
                 left: 0;
                 bottom: 0;
                 width: 100%;
-                background: rgba(255, 255, 255, 0.96);
+                background: rgba(255, 255, 255, 0.98) !important;
                 border-top: 1px solid #e5e7eb;
                 text-align: center;
                 padding: 10px 12px;
                 font-size: 13px;
-                color: #475569;
+                font-weight: 600;
+                color: #111827 !important;
                 z-index: 999999;
             }
 
-            .source-note {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                padding: 0.85rem 1rem;
-                border-radius: 0.7rem;
-                color: #334155;
-                margin-bottom: 1rem;
+            /* Supaya input/filter tetap terbaca */
+            input, textarea, select {
+                color: #111827 !important;
+                background-color: #ffffff !important;
+            }
+
+            div[data-baseweb="select"] * {
+                color: #111827 !important;
+            }
+
+            div[data-testid="stDataFrame"] {
+                background-color: #ffffff !important;
+                color: #111827 !important;
             }
         </style>
         """,
@@ -109,7 +160,7 @@ def hide_streamlit_branding():
     )
 
 
-hide_streamlit_branding()
+apply_custom_style()
 
 
 # ============================================================
@@ -136,7 +187,6 @@ st.markdown(
 # GOOGLE EARTH ENGINE
 # ============================================================
 def safe_secret_get(key, default=None):
-    """Ambil secret dengan aman."""
     try:
         return st.secrets.get(key, default)
     except Exception:
@@ -144,13 +194,6 @@ def safe_secret_get(key, default=None):
 
 
 def normalize_private_key(private_key):
-    """
-    Membersihkan private key dari Streamlit Secrets.
-
-    Mendukung:
-    1. Private key multiline TOML asli.
-    2. Private key JSON yang masih memakai \\n.
-    """
     private_key = str(private_key)
     private_key = private_key.replace("\\n", "\n")
     private_key = private_key.strip()
@@ -168,7 +211,6 @@ def normalize_private_key(private_key):
 
 
 def read_gee_project():
-    """Ambil GEE_PROJECT dari Streamlit Secrets."""
     project = safe_secret_get("GEE_PROJECT", None)
     if project:
         return str(project).strip()
@@ -176,28 +218,6 @@ def read_gee_project():
 
 
 def read_service_account_info():
-    """
-    Membaca Service Account dari Streamlit Secrets.
-
-    Format yang didukung:
-
-    GEE_PROJECT = "project-id"
-
-    [gcp_service_account]
-    type = "service_account"
-    project_id = "project-id"
-    private_key_id = "..."
-    private_key = \"\"\"-----BEGIN PRIVATE KEY-----
-    ...
-    -----END PRIVATE KEY-----\"\"\"
-    client_email = "..."
-    client_id = "..."
-    token_uri = "https://oauth2.googleapis.com/token"
-
-    Atau:
-
-    GEE_SERVICE_ACCOUNT_JSON = "{...json penuh...}"
-    """
     try:
         if "gcp_service_account" in st.secrets:
             info = dict(st.secrets["gcp_service_account"])
@@ -225,15 +245,6 @@ def read_service_account_info():
 
 
 def initialize_gee():
-    """
-    Inisialisasi Google Earth Engine.
-
-    Streamlit Cloud:
-    - Pakai Service Account dari Streamlit Secrets.
-
-    Lokal:
-    - Fallback ke earthengine authenticate jika tidak ada Service Account.
-    """
     project = read_gee_project()
     service_account_info = read_service_account_info()
 
@@ -283,14 +294,12 @@ def initialize_gee():
                 project=project or service_account_info.get("project_id"),
             )
 
-            # Tes ringan agar error API/permission langsung kelihatan.
             ee.Number(1).getInfo()
 
             st.session_state["gee_init_mode"] = "Service Account Streamlit Secrets"
             st.session_state["gee_init_error"] = ""
             return True
 
-        # Fallback lokal/laptop.
         if project:
             ee.Initialize(project=project)
         else:
@@ -363,7 +372,6 @@ with st.sidebar.expander("DEBUG Secrets", expanded=False):
 # ============================================================
 @st.cache_data(show_spinner=False)
 def load_default_data():
-    """Memuat CSV data BPS bawaan."""
     data_path = Path(DEFAULT_DATA_FILE)
 
     if not data_path.exists():
@@ -383,7 +391,6 @@ def load_default_data():
 
 
 def clean_and_validate_data(df):
-    """Validasi dan pembersihan data."""
     required_cols = [
         "nama",
         "latitude",
@@ -531,23 +538,22 @@ for jenis, total in jenis_count.items():
 st.header("🗺️ Peta Interaktif Populasi Ternak")
 
 color_map = {
-    "Sapi Perah": "blue",
-    "Sapi Potong": "green",
-    "Sapi": "green",
-    "Kerbau": "purple",
-    "Kambing": "orange",
-    "Domba": "cadetblue",
-    "Ayam": "red",
-    "Ayam Buras": "red",
-    "Ayam Ras Pedaging": "darkred",
-    "Ayam Ras Petelur": "pink",
-    "Itik": "lightblue",
-    "Lainnya": "gray",
+    "Sapi Perah": "#2563eb",
+    "Sapi Potong": "#16a34a",
+    "Sapi": "#16a34a",
+    "Kerbau": "#7c3aed",
+    "Kambing": "#f97316",
+    "Domba": "#0891b2",
+    "Ayam": "#dc2626",
+    "Ayam Buras": "#dc2626",
+    "Ayam Ras Pedaging": "#991b1b",
+    "Ayam Ras Petelur": "#ec4899",
+    "Itik": "#38bdf8",
+    "Lainnya": "#64748b",
 }
 
 
 def marker_radius(value):
-    """Radius marker agar data besar tidak menutupi peta."""
     return max(5, min(18, 3 + math.log10(max(int(value), 1)) * 2.2))
 
 
@@ -565,13 +571,14 @@ folium.TileLayer("CartoDB dark_matter", name="CartoDB Dark").add_to(m)
 
 for _, row in filtered_df.iterrows():
     jenis = str(row["jenis_ternak"])
-    color = color_map.get(jenis, "gray")
+    color = color_map.get(jenis, "#64748b")
     jumlah = int(row["jumlah_ekor"])
 
     popup_html = f"""
-    <b>{row['nama']}</b><br>
-    Jenis ternak: {jenis}<br>
-    Jumlah populasi: {jumlah:,} ekor<br>
+    <div style="font-family: Arial, sans-serif; color:#111827;">
+        <b>{row['nama']}</b><br>
+        Jenis ternak: {jenis}<br>
+        Jumlah populasi: {jumlah:,} ekor<br>
     """.replace(",", ".")
 
     if "provinsi" in filtered_df.columns:
@@ -586,7 +593,7 @@ for _, row in filtered_df.iterrows():
     if "jenis_data" in filtered_df.columns:
         popup_html += f"Jenis data: {row.get('jenis_data', '-')}<br>"
 
-    popup_html += f"Koordinat: {row['latitude']:.4f}, {row['longitude']:.4f}"
+    popup_html += f"Koordinat: {row['latitude']:.4f}, {row['longitude']:.4f}</div>"
 
     folium.CircleMarker(
         location=[row["latitude"], row["longitude"]],
@@ -594,25 +601,75 @@ for _, row in filtered_df.iterrows():
         popup=folium.Popup(popup_html, max_width=340),
         color=color,
         fill=True,
+        fill_color=color,
         fill_opacity=0.72,
         tooltip=f"{row['nama']} - {jumlah:,} ekor".replace(",", "."),
     ).add_to(m)
 
 
+# ============================================================
+# LEGEND PETA: DIPAKSA TERANG DAN TERBACA
+# ============================================================
 legend_items = ""
 
 for jenis in selected_jenis:
-    legend_items += (
-        f"<span style='color:{color_map.get(jenis, 'gray')};'>●</span> "
-        f"{jenis}<br>"
-    )
+    warna = color_map.get(jenis, "#64748b")
+    legend_items += f"""
+    <div style="
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0;
+        color: #111827 !important;
+        font-weight: 700;
+        white-space: nowrap;
+    ">
+        <span style="
+            color: {warna} !important;
+            font-size: 20px;
+            line-height: 1;
+            font-weight: 900;
+            text-shadow: 0 0 1px #000000;
+        ">●</span>
+        <span style="
+            color: #111827 !important;
+            font-size: 14px;
+            font-weight: 700;
+        ">{jenis}</span>
+    </div>
+    """
 
 legend_html = f"""
-<div style="position: fixed; bottom: 72px; left: 50px; min-width: 175px;
-            background-color: white; border: 1px solid #CBD5E1; z-index: 9999;
-            font-size: 13px; padding: 10px; border-radius: 8px;
-            box-shadow: 0 3px 14px rgba(0,0,0,.12);">
-<b>Legenda</b><br>{legend_items}
+<div style="
+    position: fixed;
+    bottom: 72px;
+    left: 50px;
+    min-width: 210px;
+    max-width: 300px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #ffffff !important;
+    color: #111827 !important;
+    border: 2px solid #334155;
+    z-index: 999999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    padding: 12px 14px;
+    border-radius: 12px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.35);
+">
+    <div style="
+        color: #111827 !important;
+        font-size: 16px;
+        font-weight: 900;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #cbd5e1;
+        padding-bottom: 5px;
+    ">
+        Legenda
+    </div>
+    {legend_items}
 </div>
 """
 
@@ -620,7 +677,6 @@ m.get_root().html.add_child(folium.Element(legend_html))
 folium.LayerControl().add_to(m)
 
 try:
-    # Versi baru Streamlit menyarankan width="stretch".
     st_folium(
         m,
         height=540,
@@ -630,7 +686,6 @@ try:
     )
 
 except TypeError:
-    # Fallback jika streamlit-folium belum mendukung width="stretch".
     try:
         st_folium(
             m,
