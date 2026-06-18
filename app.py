@@ -1,6 +1,7 @@
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
+from io import StringIO
 from pathlib import Path
 
 import ee
@@ -16,7 +17,6 @@ from streamlit_folium import st_folium
 # ============================================================
 APP_TITLE = "Dashboard Peternakan Indonesia"
 DEVELOPER_NAME = "Galuh Adi Insani"
-
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 
 BPS_TABLE_URL = (
@@ -38,7 +38,7 @@ st.set_page_config(
 
 
 # ============================================================
-# STYLE: PAKSA LIGHT THEME + HIDE STREAMLIT BRANDING
+# STYLE: LIGHT THEME + LEGEND TERBACA + HIDE STREAMLIT BRANDING
 # ============================================================
 def apply_custom_style():
     st.markdown(
@@ -65,10 +65,7 @@ def apply_custom_style():
                 color: #111827 !important;
             }
 
-            div[data-testid="stMarkdownContainer"] {
-                color: #111827 !important;
-            }
-
+            div[data-testid="stMarkdownContainer"],
             h1, h2, h3, h4, h5, h6, p, span, label {
                 color: #111827 !important;
             }
@@ -83,7 +80,8 @@ def apply_custom_style():
                 position: fixed;
             }
 
-            [data-testid="stDecoration"] {
+            [data-testid="stDecoration"],
+            [data-testid="stHeader"] {
                 display: none !important;
             }
 
@@ -91,14 +89,7 @@ def apply_custom_style():
                 visibility: hidden !important;
             }
 
-            [data-testid="stHeader"] {
-                display: none !important;
-            }
-
-            .stDeployButton {
-                display: none !important;
-            }
-
+            .stDeployButton,
             .viewerBadge_container__1QSob,
             .viewerBadge_link__1S137,
             .viewerBadge_text__1JaDK {
@@ -119,8 +110,21 @@ def apply_custom_style():
                 margin-bottom: 1rem;
             }
 
-            .source-note * {
+            .insight-card {
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 14px;
+                padding: 1rem;
+                margin-bottom: 0.75rem;
+                box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
                 color: #111827 !important;
+            }
+
+            .insight-title {
+                font-size: 15px;
+                font-weight: 800;
+                color: #0f172a !important;
+                margin-bottom: 0.35rem;
             }
 
             .custom-footer {
@@ -146,11 +150,6 @@ def apply_custom_style():
             div[data-baseweb="select"] * {
                 color: #111827 !important;
             }
-
-            div[data-testid="stDataFrame"] {
-                background-color: #ffffff !important;
-                color: #111827 !important;
-            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -161,19 +160,42 @@ apply_custom_style()
 
 
 # ============================================================
+# HELPER UI
+# ============================================================
+def full_width_button(label, **kwargs):
+    """Kompatibel untuk Streamlit lama dan baru."""
+    try:
+        return st.button(label, width="stretch", **kwargs)
+    except TypeError:
+        return st.button(label, use_container_width=True, **kwargs)
+
+
+def show_metric_card(title, value, note=""):
+    st.markdown(
+        f"""
+        <div class="insight-card">
+            <div class="insight-title">{title}</div>
+            <div style="font-size: 24px; font-weight: 900; color:#0f172a !important;">{value}</div>
+            <div style="font-size: 13px; color:#475569 !important;">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
 # HEADER
 # ============================================================
 st.title("🐄 Dashboard Peternakan Indonesia")
-st.subheader("Data agregat resmi + pemetaan interaktif + analisis NDVI Sentinel-2")
+st.subheader("Pemetaan peternakan, kondisi hijauan, dan rekomendasi tindakan berbasis NDVI Sentinel-2")
 
 st.markdown(
     """
     <div class="source-note">
-    <b>Status data:</b> data bawaan aplikasi menggunakan
-    <b>data agregat provinsi BPS 2024</b> untuk populasi sapi perah dan sapi potong.
-    Titik pada peta adalah <b>koordinat representatif ibu kota provinsi</b>,
-    bukan titik kandang individu. Untuk analisis kandang nyata, gunakan menu
-    <b>Upload CSV/XLSX Sendiri</b> berisi koordinat peternakan asli.
+    <b>Status data:</b> data bawaan aplikasi menggunakan <b>data agregat provinsi BPS 2024</b>.
+    Titik pada peta bawaan adalah <b>koordinat representatif ibu kota provinsi</b>, bukan titik kandang individu.
+    Untuk insight yang benar-benar sesuai kondisi peternakan, gunakan menu <b>Upload CSV/XLSX Sendiri</b>
+    berisi koordinat kandang atau lahan hijauan/pakan aktual.
     </div>
     """,
     unsafe_allow_html=True,
@@ -194,50 +216,32 @@ def normalize_private_key(private_key):
     private_key = str(private_key)
     private_key = private_key.replace("\\n", "\n")
     private_key = private_key.strip()
-
-    private_key = private_key.replace(
-        "-----BEGIN PRIVATE KEY-----\n\n",
-        "-----BEGIN PRIVATE KEY-----\n",
-    )
-    private_key = private_key.replace(
-        "\n\n-----END PRIVATE KEY-----",
-        "\n-----END PRIVATE KEY-----",
-    )
-
+    private_key = private_key.replace("-----BEGIN PRIVATE KEY-----\n\n", "-----BEGIN PRIVATE KEY-----\n")
+    private_key = private_key.replace("\n\n-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
     return private_key
 
 
 def read_gee_project():
     project = safe_secret_get("GEE_PROJECT", None)
-    if project:
-        return str(project).strip()
-    return None
+    return str(project).strip() if project else None
 
 
 def read_service_account_info():
     try:
         if "gcp_service_account" in st.secrets:
             info = dict(st.secrets["gcp_service_account"])
-
         elif "GEE_SERVICE_ACCOUNT_JSON" in st.secrets:
-            raw_json = st.secrets["GEE_SERVICE_ACCOUNT_JSON"]
-            info = json.loads(raw_json)
-
+            info = json.loads(st.secrets["GEE_SERVICE_ACCOUNT_JSON"])
         else:
-            st.session_state["gee_init_error"] = (
-                "Secrets belum menemukan [gcp_service_account] atau GEE_SERVICE_ACCOUNT_JSON."
-            )
+            st.session_state["gee_init_error"] = "Secrets belum menemukan service account."
             return None
 
         if "private_key" in info and info["private_key"]:
             info["private_key"] = normalize_private_key(info["private_key"])
 
         return info
-
     except Exception as e:
-        st.session_state["gee_init_error"] = (
-            f"Secrets terbaca, tetapi format service account salah: {e}"
-        )
+        st.session_state["gee_init_error"] = f"Format Secrets service account salah: {e}"
         return None
 
 
@@ -248,38 +252,18 @@ def initialize_gee():
     try:
         if service_account_info:
             required_keys = [
-                "type",
-                "project_id",
-                "private_key_id",
-                "private_key",
-                "client_email",
-                "client_id",
-                "token_uri",
+                "type", "project_id", "private_key_id", "private_key",
+                "client_email", "client_id", "token_uri",
             ]
-
-            missing_keys = [
-                key for key in required_keys
-                if not service_account_info.get(key)
-            ]
-
+            missing_keys = [key for key in required_keys if not service_account_info.get(key)]
             if missing_keys:
-                raise ValueError(
-                    f"Secrets service account kurang field: {missing_keys}"
-                )
+                raise ValueError(f"Secrets service account kurang field: {missing_keys}")
 
             private_key = service_account_info["private_key"]
-
             if not private_key.startswith("-----BEGIN PRIVATE KEY-----"):
-                raise ValueError(
-                    "Format private_key salah. Private key harus diawali "
-                    "-----BEGIN PRIVATE KEY-----"
-                )
-
+                raise ValueError("Format private_key salah: harus diawali -----BEGIN PRIVATE KEY-----")
             if not private_key.strip().endswith("-----END PRIVATE KEY-----"):
-                raise ValueError(
-                    "Format private_key salah. Private key harus diakhiri "
-                    "-----END PRIVATE KEY-----"
-                )
+                raise ValueError("Format private_key salah: harus diakhiri -----END PRIVATE KEY-----")
 
             credentials = ee.ServiceAccountCredentials(
                 service_account_info["client_email"],
@@ -290,10 +274,9 @@ def initialize_gee():
                 credentials=credentials,
                 project=project or service_account_info.get("project_id"),
             )
-
             ee.Number(1).getInfo()
 
-            st.session_state["gee_init_mode"] = "Service Account Streamlit Secrets"
+            st.session_state["gee_init_mode"] = "aktif"
             st.session_state["gee_init_error"] = ""
             return True
 
@@ -303,84 +286,42 @@ def initialize_gee():
             ee.Initialize()
 
         ee.Number(1).getInfo()
-
-        st.session_state["gee_init_mode"] = "Credential lokal/default"
+        st.session_state["gee_init_mode"] = "aktif"
         st.session_state["gee_init_error"] = ""
         return True
 
     except Exception as e:
-        st.session_state["gee_init_mode"] = "Belum aktif"
+        st.session_state["gee_init_mode"] = "belum aktif"
         st.session_state["gee_init_error"] = str(e)
         return False
 
 
 gee_ready = initialize_gee()
 
-
-# ============================================================
-# SIDEBAR: STATUS GEE + DEBUG
-# ============================================================
-with st.sidebar.expander("Status Google Earth Engine", expanded=not gee_ready):
+with st.sidebar.expander("Status Satelit", expanded=not gee_ready):
     if gee_ready:
-        st.success(f"GEE aktif via {st.session_state.get('gee_init_mode', '-')}")
+        st.success("Satelit aktif")
+        st.caption("Analisis NDVI Sentinel-2 siap digunakan.")
     else:
-        st.warning("GEE belum aktif di Streamlit Cloud.")
-        st.caption(
-            "Pastikan Service Account sudah dimasukkan ke Streamlit Secrets, "
-            "Earth Engine API aktif, project sudah terdaftar Earth Engine, "
-            "role IAM benar, lalu Reboot app."
-        )
-
-        detail = st.session_state.get("gee_init_error", "")
-        if detail:
-            st.code(detail, language="text")
-
-
-with st.sidebar.expander("DEBUG Secrets", expanded=False):
-    try:
-        st.write("GEE_PROJECT ada:", "GEE_PROJECT" in st.secrets)
-        st.write("gcp_service_account ada:", "gcp_service_account" in st.secrets)
-        st.write("GEE_SERVICE_ACCOUNT_JSON ada:", "GEE_SERVICE_ACCOUNT_JSON" in st.secrets)
-
-        if "gcp_service_account" in st.secrets:
-            sa = dict(st.secrets["gcp_service_account"])
-            pk = str(sa.get("private_key", ""))
-            pk_normalized = normalize_private_key(pk) if pk else ""
-
-            st.write("client_email ada:", bool(sa.get("client_email")))
-            st.write("private_key ada:", bool(pk))
-            st.write("project_id:", sa.get("project_id", "-"))
-            st.write(
-                "private_key mulai benar:",
-                pk_normalized.startswith("-----BEGIN PRIVATE KEY-----"),
-            )
-            st.write(
-                "private_key selesai benar:",
-                pk_normalized.strip().endswith("-----END PRIVATE KEY-----"),
-            )
-            st.write("client_email:", sa.get("client_email", "-"))
-
-    except Exception as e:
-        st.code(str(e), language="text")
+        st.warning("Satelit belum aktif")
+        st.caption("Peta dan data tetap bisa digunakan. NDVI membutuhkan Google Earth Engine.")
+        with st.expander("Detail teknis", expanded=False):
+            st.code(st.session_state.get("gee_init_error", "Tidak ada detail error."), language="text")
 
 
 # ============================================================
-# LOAD DATA
+# DATA LOADING
 # ============================================================
 @st.cache_data(show_spinner=False)
 def load_default_data():
     data_path = Path(DEFAULT_DATA_FILE)
-
     if not data_path.exists():
         data_path = Path(__file__).resolve().parent / DEFAULT_DATA_FILE
 
     try:
         return pd.read_csv(data_path)
     except FileNotFoundError:
-        st.error(
-            f"File {DEFAULT_DATA_FILE} tidak ditemukan. "
-            "Pastikan file CSV berada satu folder dengan app.py."
-        )
+        st.error(f"File {DEFAULT_DATA_FILE} tidak ditemukan. Pastikan file CSV berada satu folder dengan app.py.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"Gagal membaca file data: {e}")
@@ -388,37 +329,48 @@ def load_default_data():
 
 
 def read_uploaded_peternakan_file(uploaded_file):
-    """
-    Membaca file upload CSV atau XLSX.
-    CSV: pd.read_csv
-    XLSX: pd.read_excel sheet pertama
-    """
+    """Membaca upload CSV atau XLSX."""
     filename = uploaded_file.name.lower()
-
     try:
         if filename.endswith(".csv"):
             return pd.read_csv(uploaded_file)
-
         if filename.endswith(".xlsx"):
             return pd.read_excel(uploaded_file, sheet_name=0)
-
         st.error("Format file tidak didukung. Gunakan CSV atau XLSX.")
         return pd.DataFrame()
-
     except Exception as e:
         st.error(f"Gagal membaca file upload: {e}")
         return pd.DataFrame()
 
 
-def clean_and_validate_data(df):
-    required_cols = [
-        "nama",
-        "latitude",
-        "longitude",
-        "jenis_ternak",
-        "jumlah_ekor",
-    ]
+def parse_count(value):
+    """Jumlah ekor: angka bulat. Hapus pemisah ribuan kalau ada."""
+    if pd.isna(value):
+        return 0
+    if isinstance(value, str):
+        value = value.strip().replace(" ", "")
+        # Anggap titik/koma sebagai pemisah ribuan untuk kolom jumlah.
+        value = value.replace(".", "").replace(",", "")
+    try:
+        return int(float(value))
+    except Exception:
+        return 0
 
+
+def parse_decimal(value):
+    """Angka desimal seperti luas lahan. Mendukung koma desimal."""
+    if pd.isna(value):
+        return None
+    if isinstance(value, str):
+        value = value.strip().replace(" ", "").replace(",", ".")
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def clean_and_validate_data(df):
+    required_cols = ["nama", "latitude", "longitude", "jenis_ternak", "jumlah_ekor"]
     missing = [col for col in required_cols if col not in df.columns]
 
     if missing:
@@ -427,13 +379,12 @@ def clean_and_validate_data(df):
 
     cleaned = df.copy()
 
-    cleaned["latitude"] = pd.to_numeric(cleaned["latitude"], errors="coerce")
-    cleaned["longitude"] = pd.to_numeric(cleaned["longitude"], errors="coerce")
-    cleaned["jumlah_ekor"] = (
-        pd.to_numeric(cleaned["jumlah_ekor"], errors="coerce")
-        .fillna(0)
-        .astype(int)
-    )
+    cleaned["latitude"] = cleaned["latitude"].apply(parse_decimal)
+    cleaned["longitude"] = cleaned["longitude"].apply(parse_decimal)
+    cleaned["jumlah_ekor"] = cleaned["jumlah_ekor"].apply(parse_count)
+
+    if "luas_lahan_ha" in cleaned.columns:
+        cleaned["luas_lahan_ha"] = cleaned["luas_lahan_ha"].apply(parse_decimal)
 
     cleaned = cleaned.dropna(subset=["latitude", "longitude"])
 
@@ -451,10 +402,7 @@ st.sidebar.header("📁 Sumber Data")
 
 data_source = st.sidebar.radio(
     "Pilih sumber data:",
-    options=[
-        "Data Resmi BPS 2024 (Agregat Provinsi)",
-        "Upload CSV/XLSX Sendiri",
-    ],
+    options=["Data Resmi BPS 2024 (Agregat Provinsi)", "Upload CSV/XLSX Sendiri"],
     index=0,
 )
 
@@ -465,26 +413,22 @@ if data_source == "Upload CSV/XLSX Sendiri":
         "Upload file CSV/XLSX lokasi peternakan",
         type=["csv", "xlsx"],
         help=(
-            "Format: CSV atau XLSX. Kolom wajib: nama, latitude, longitude, jenis_ternak, jumlah_ekor. "
+            "Kolom wajib: nama, latitude, longitude, jenis_ternak, jumlah_ekor. "
             "Kolom opsional: provinsi, kabupaten_kota, kecamatan, desa, alamat, luas_lahan_ha, tahun, sumber."
         ),
     )
 
 if data_source == "Data Resmi BPS 2024 (Agregat Provinsi)":
     df = load_default_data()
-
     if not df.empty:
-        st.sidebar.success(f"✅ {len(df)} baris data agregat BPS dimuat")
+        st.sidebar.success(f"✅ {len(df)} baris data agregat dimuat")
         st.sidebar.caption("Satuan: ekor. Titik peta: ibu kota provinsi.")
-
 elif uploaded_file is not None:
     df = read_uploaded_peternakan_file(uploaded_file)
-    st.sidebar.success(f"✅ {len(df)} baris data berhasil dimuat dari {uploaded_file.name}")
-
+    st.sidebar.success(f"✅ {len(df)} baris data dimuat dari {uploaded_file.name}")
 else:
-    st.sidebar.warning("Upload CSV terlebih dahulu atau gunakan data BPS bawaan.")
+    st.sidebar.warning("Upload CSV/XLSX terlebih dahulu atau gunakan data BPS bawaan.")
     st.stop()
-
 
 df = clean_and_validate_data(df)
 
@@ -497,20 +441,12 @@ st.sidebar.subheader("🔎 Filter")
 
 if "provinsi" in df.columns:
     provinsi_options = sorted(df["provinsi"].dropna().unique().tolist())
-    selected_provinsi = st.sidebar.multiselect(
-        "Provinsi",
-        provinsi_options,
-        default=provinsi_options,
-    )
+    selected_provinsi = st.sidebar.multiselect("Provinsi", provinsi_options, default=provinsi_options)
 else:
     selected_provinsi = []
 
 jenis_options = sorted(df["jenis_ternak"].dropna().unique().tolist())
-selected_jenis = st.sidebar.multiselect(
-    "Jenis ternak",
-    jenis_options,
-    default=jenis_options,
-)
+selected_jenis = st.sidebar.multiselect("Jenis ternak", jenis_options, default=jenis_options)
 
 filtered_df = df.copy()
 
@@ -526,19 +462,200 @@ if filtered_df.empty:
 
 
 # ============================================================
+# HELPER INSIGHT
+# ============================================================
+def classify_ndvi(ndvi_value):
+    if ndvi_value is None:
+        return "Tidak tersedia", "Data NDVI belum tersedia.", "gray", [
+            "Coba perluas periode pencarian citra atau cek kembali koordinat lokasi."
+        ]
+
+    if ndvi_value > 0.65:
+        return "Hijauan sangat baik", "Vegetasi sangat sehat.", "green", [
+            "Pertahankan pola pemeliharaan lahan hijauan.",
+            "Lakukan monitoring ulang 7–14 hari ke depan.",
+            "Manfaatkan kondisi baik ini untuk menyiapkan stok pakan cadangan."
+        ]
+    if ndvi_value > 0.45:
+        return "Hijauan cukup", "Vegetasi sedang dan masih mendukung.", "blue", [
+            "Pantau ketersediaan hijauan secara berkala.",
+            "Mulai siapkan pakan tambahan bila jumlah ternak tinggi.",
+            "Periksa area yang mulai mengering di sekitar kandang/lahan pakan."
+        ]
+    if ndvi_value > 0.25:
+        return "Hijauan rendah", "Vegetasi kurang optimal.", "orange", [
+            "Tambahkan pakan dari luar lahan atau stok pakan kering.",
+            "Periksa ketersediaan air dan kondisi lahan pakan.",
+            "Prioritaskan lahan hijauan yang masih produktif untuk ternak utama."
+        ]
+
+    return "Hijauan sangat rendah", "Vegetasi minim atau lahan dominan terbuka/bangunan/air.", "red", [
+        "Segera siapkan pakan tambahan minimal untuk 7 hari.",
+        "Cek kemungkinan kekeringan, lahan terbuka, atau kesalahan titik koordinat.",
+        "Jika koordinat berada di kandang tertutup, gunakan koordinat lahan hijauan/pakan."
+    ]
+
+
+def density_insight(jenis_ternak, jumlah_ekor, luas_lahan_ha):
+    if luas_lahan_ha is None or luas_lahan_ha <= 0:
+        return None, "Luas lahan belum tersedia", [
+            "Tambahkan kolom luas_lahan_ha agar aplikasi dapat menilai kepadatan ternak."
+        ]
+
+    density = jumlah_ekor / luas_lahan_ha
+    jenis_lower = str(jenis_ternak).lower()
+
+    if "ayam" in jenis_lower or "itik" in jenis_lower:
+        if density <= 1000:
+            status = "Kepadatan rendah-sedang"
+            recs = ["Kepadatan unggas masih relatif terkendali menurut input luas lahan."]
+        elif density <= 5000:
+            status = "Kepadatan tinggi"
+            recs = ["Periksa ventilasi, air minum, sanitasi, dan manajemen pakan lebih rutin."]
+        else:
+            status = "Kepadatan sangat tinggi"
+            recs = ["Prioritaskan sanitasi kandang, ventilasi, dan kontrol penyakit."]
+    elif any(x in jenis_lower for x in ["kambing", "domba"]):
+        if density <= 25:
+            status = "Kepadatan rendah-sedang"
+            recs = ["Kepadatan ternak relatif aman menurut input luas lahan."]
+        elif density <= 75:
+            status = "Kepadatan tinggi"
+            recs = ["Tambahkan sumber hijauan/pakan dari luar lahan bila NDVI menurun."]
+        else:
+            status = "Kepadatan sangat tinggi"
+            recs = ["Risiko tekanan pakan meningkat. Siapkan pakan tambahan dan evaluasi kapasitas kandang."]
+    else:
+        if density <= 5:
+            status = "Kepadatan rendah-sedang"
+            recs = ["Kepadatan sapi/ternak besar relatif aman menurut input luas lahan."]
+        elif density <= 20:
+            status = "Kepadatan tinggi"
+            recs = ["Pantau hijauan dan air minum karena kebutuhan pakan cukup besar."]
+        else:
+            status = "Kepadatan sangat tinggi"
+            recs = ["Risiko kekurangan hijauan tinggi. Tambahkan stok pakan dan evaluasi daya dukung lahan."]
+
+    return density, status, recs
+
+
+def build_recommendation_report(row, ndvi_value=None, trend_df=None):
+    status, desc, _, ndvi_recs = classify_ndvi(ndvi_value)
+
+    luas = row.get("luas_lahan_ha", None) if "luas_lahan_ha" in row.index else None
+    density, density_status, density_recs = density_insight(
+        row.get("jenis_ternak", "-"),
+        int(row.get("jumlah_ekor", 0)),
+        luas,
+    )
+
+    report = {
+        "nama": row.get("nama", "-"),
+        "jenis_ternak": row.get("jenis_ternak", "-"),
+        "jumlah_ekor": int(row.get("jumlah_ekor", 0)),
+        "latitude": row.get("latitude", None),
+        "longitude": row.get("longitude", None),
+        "ndvi": ndvi_value,
+        "status_hijauan": status,
+        "keterangan_hijauan": desc,
+        "kepadatan_ekor_per_ha": density,
+        "status_kepadatan": density_status,
+        "tanggal_analisis": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+
+    if trend_df is not None and not trend_df.empty and trend_df["ndvi"].notna().sum() >= 2:
+        first = trend_df["ndvi"].dropna().iloc[0]
+        last = trend_df["ndvi"].dropna().iloc[-1]
+        change = ((last - first) / abs(first)) * 100 if first != 0 else None
+        report["perubahan_ndvi_90_hari_persen"] = change
+    else:
+        report["perubahan_ndvi_90_hari_persen"] = None
+
+    all_recs = ndvi_recs + density_recs
+    report["rekomendasi"] = " | ".join(all_recs)
+
+    return pd.DataFrame([report])
+
+
+def get_ndvi_mean(point, start_date, end_date, cloud_threshold=30, buffer_meter=500):
+    s2 = (
+        ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+        .filterBounds(point)
+        .filterDate(start_date, end_date)
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_threshold))
+        .sort("system:time_start", False)
+    )
+
+    count = s2.size().getInfo()
+    if count == 0:
+        return None, 0
+
+    ndvi_img = s2.median().normalizedDifference(["B8", "B4"]).rename("NDVI")
+    stats = ndvi_img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point.buffer(buffer_meter),
+        scale=10,
+        maxPixels=1e9,
+    ).getInfo()
+
+    return stats.get("NDVI"), count
+
+
+def get_ndvi_trend_90_days(point, cloud_threshold=30, buffer_meter=500):
+    today = datetime.now()
+    records = []
+
+    # 6 periode x 15 hari = 90 hari
+    for i in range(6, 0, -1):
+        start_dt = today - timedelta(days=i * 15)
+        end_dt = today - timedelta(days=(i - 1) * 15)
+
+        start_str = start_dt.strftime("%Y-%m-%d")
+        end_str = end_dt.strftime("%Y-%m-%d")
+        label = f"{start_dt.strftime('%d %b')} - {end_dt.strftime('%d %b')}"
+
+        try:
+            ndvi, count = get_ndvi_mean(point, start_str, end_str, cloud_threshold, buffer_meter)
+        except Exception:
+            ndvi, count = None, 0
+
+        records.append({
+            "periode": label,
+            "tanggal_mulai": start_str,
+            "tanggal_selesai": end_str,
+            "ndvi": ndvi,
+            "jumlah_citra": count,
+        })
+
+    return pd.DataFrame(records)
+
+
+# ============================================================
+# RINGKASAN ATAS
+# ============================================================
+total_populasi = int(filtered_df["jumlah_ekor"].sum())
+total_lokasi = len(filtered_df)
+total_jenis = filtered_df["jenis_ternak"].nunique()
+total_provinsi = filtered_df["provinsi"].nunique() if "provinsi" in filtered_df.columns else "-"
+
+metric_cols = st.columns(4)
+with metric_cols[0]:
+    st.metric("Lokasi/Data", f"{total_lokasi:,}".replace(",", "."))
+with metric_cols[1]:
+    st.metric("Total Populasi", f"{total_populasi:,}".replace(",", "."))
+with metric_cols[2]:
+    st.metric("Jenis Ternak", total_jenis)
+with metric_cols[3]:
+    st.metric("Provinsi", total_provinsi)
+
+
+# ============================================================
 # SIDEBAR: RINGKASAN
 # ============================================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Ringkasan")
-
-st.sidebar.metric("Baris Data", len(filtered_df))
-st.sidebar.metric(
-    "Total Populasi",
-    f"{int(filtered_df['jumlah_ekor'].sum()):,}".replace(",", "."),
-)
-
-if "provinsi" in filtered_df.columns:
-    st.sidebar.metric("Jumlah Provinsi", filtered_df["provinsi"].nunique())
+st.sidebar.metric("Baris Data", total_lokasi)
+st.sidebar.metric("Total Populasi", f"{total_populasi:,}".replace(",", "."))
 
 jenis_count = (
     filtered_df.groupby("jenis_ternak")["jumlah_ekor"]
@@ -547,7 +664,6 @@ jenis_count = (
 )
 
 st.sidebar.write("**Populasi per Jenis:**")
-
 for jenis, total in jenis_count.items():
     st.sidebar.write(f"- {jenis}: {int(total):,} ekor".replace(",", "."))
 
@@ -580,12 +696,7 @@ def marker_radius(value):
 center_lat = filtered_df["latitude"].mean()
 center_lon = filtered_df["longitude"].mean()
 
-m = folium.Map(
-    location=[center_lat, center_lon],
-    zoom_start=5,
-    tiles="OpenStreetMap",
-)
-
+m = folium.Map(location=[center_lat, center_lon], zoom_start=5, tiles="OpenStreetMap")
 folium.TileLayer("CartoDB positron", name="CartoDB Positron").add_to(m)
 folium.TileLayer("CartoDB dark_matter", name="CartoDB Dark").add_to(m)
 
@@ -601,24 +712,19 @@ for _, row in filtered_df.iterrows():
         Jumlah populasi: {jumlah:,} ekor<br>
     """.replace(",", ".")
 
-    if "provinsi" in filtered_df.columns:
-        popup_html += f"Provinsi: {row.get('provinsi', '-')}<br>"
+    for col in ["provinsi", "kabupaten_kota", "kecamatan", "desa", "tahun", "sumber"]:
+        if col in filtered_df.columns:
+            popup_html += f"{col.replace('_', ' ').title()}: {row.get(col, '-')}<br>"
 
-    if "tahun" in filtered_df.columns:
-        popup_html += f"Tahun: {row.get('tahun', '-')}<br>"
-
-    if "sumber" in filtered_df.columns:
-        popup_html += f"Sumber: {row.get('sumber', '-')}<br>"
-
-    if "jenis_data" in filtered_df.columns:
-        popup_html += f"Jenis data: {row.get('jenis_data', '-')}<br>"
+    if "luas_lahan_ha" in filtered_df.columns and pd.notna(row.get("luas_lahan_ha", None)):
+        popup_html += f"Luas lahan: {row.get('luas_lahan_ha', '-')} ha<br>"
 
     popup_html += f"Koordinat: {row['latitude']:.4f}, {row['longitude']:.4f}</div>"
 
     folium.CircleMarker(
         location=[row["latitude"], row["longitude"]],
         radius=marker_radius(jumlah),
-        popup=folium.Popup(popup_html, max_width=340),
+        popup=folium.Popup(popup_html, max_width=360),
         color=color,
         fill=True,
         fill_color=color,
@@ -627,66 +733,25 @@ for _, row in filtered_df.iterrows():
     ).add_to(m)
 
 
-# ============================================================
-# LEGEND PETA: DIPAKSA TERANG DAN TERBACA
-# ============================================================
 legend_items = ""
-
 for jenis in selected_jenis:
     warna = color_map.get(jenis, "#64748b")
     legend_items += f"""
-    <div style="
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 4px 0;
-        color: #111827 !important;
-        font-weight: 700;
-        white-space: nowrap;
-    ">
-        <span style="
-            color: {warna} !important;
-            font-size: 20px;
-            line-height: 1;
-            font-weight: 900;
-            text-shadow: 0 0 1px #000000;
-        ">●</span>
-        <span style="
-            color: #111827 !important;
-            font-size: 14px;
-            font-weight: 700;
-        ">{jenis}</span>
+    <div style="display:flex;align-items:center;gap:8px;margin:4px 0;color:#111827!important;font-weight:700;white-space:nowrap;">
+        <span style="color:{warna}!important;font-size:20px;line-height:1;font-weight:900;text-shadow:0 0 1px #000000;">●</span>
+        <span style="color:#111827!important;font-size:14px;font-weight:700;">{jenis}</span>
     </div>
     """
 
 legend_html = f"""
 <div style="
-    position: fixed;
-    bottom: 72px;
-    left: 50px;
-    min-width: 210px;
-    max-width: 300px;
-    max-height: 260px;
-    overflow-y: auto;
-    background: #ffffff !important;
-    color: #111827 !important;
-    border: 2px solid #334155;
-    z-index: 999999;
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.45;
-    padding: 12px 14px;
-    border-radius: 12px;
-    box-shadow: 0 6px 22px rgba(0,0,0,.35);
+    position: fixed; bottom: 72px; left: 50px; min-width: 210px; max-width: 300px;
+    max-height: 260px; overflow-y: auto; background: #ffffff !important;
+    color: #111827 !important; border: 2px solid #334155; z-index: 999999;
+    font-family: Arial, sans-serif; font-size: 14px; line-height: 1.45;
+    padding: 12px 14px; border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.35);
 ">
-    <div style="
-        color: #111827 !important;
-        font-size: 16px;
-        font-weight: 900;
-        margin-bottom: 8px;
-        border-bottom: 1px solid #cbd5e1;
-        padding-bottom: 5px;
-    ">
+    <div style="color:#111827!important;font-size:16px;font-weight:900;margin-bottom:8px;border-bottom:1px solid #cbd5e1;padding-bottom:5px;">
         Legenda
     </div>
     {legend_items}
@@ -697,177 +762,136 @@ m.get_root().html.add_child(folium.Element(legend_html))
 folium.LayerControl().add_to(m)
 
 try:
-    st_folium(
-        m,
-        height=540,
-        width="stretch",
-        returned_objects=["last_object_clicked"],
-        key="peta_peternakan_indonesia",
-    )
-
+    st_folium(m, height=540, width="stretch", returned_objects=["last_object_clicked"], key="peta_peternakan_indonesia")
 except TypeError:
     try:
-        st_folium(
-            m,
-            height=540,
-            use_container_width=True,
-            returned_objects=["last_object_clicked"],
-            key="peta_peternakan_indonesia_fallback_container",
-        )
+        st_folium(m, height=540, use_container_width=True, returned_objects=["last_object_clicked"], key="peta_peternakan_indonesia_fallback_container")
     except TypeError:
-        st_folium(
-            m,
-            width=1200,
-            height=540,
-            returned_objects=["last_object_clicked"],
-            key="peta_peternakan_indonesia_fallback_width",
-        )
-
+        st_folium(m, width=1200, height=540, returned_objects=["last_object_clicked"], key="peta_peternakan_indonesia_fallback_width")
 except Exception as map_error:
     st.warning(f"Komponen streamlit-folium gagal dimuat: {map_error}")
     components.html(m.get_root().render(), height=560, scrolling=False)
 
 
 # ============================================================
-# ANALISIS SENTINEL-2
+# INSIGHT OPERASIONAL
 # ============================================================
-st.header("🛰️ Analisis NDVI Sentinel-2")
+st.header("🔍 Insight Peternakan")
 
-st.info(
-    "NDVI cocok untuk melihat kondisi vegetasi/hijauan. "
-    "Untuk data BPS agregat, hasil NDVI hanya membaca area representatif provinsi. "
-    "Agar analisis benar-benar kondisi peternakan, upload CSV berisi koordinat kandang/lahan pakan yang aktual."
-)
+selected_name = st.selectbox("Pilih lokasi/data untuk dianalisis", options=filtered_df["nama"].tolist(), index=0)
+selected_row = filtered_df[filtered_df["nama"] == selected_name].iloc[0]
 
-col1, col2 = st.columns([1, 2])
+col_info, col_rekom = st.columns([1, 1])
 
-with col1:
-    selected_name = st.selectbox(
-        "Pilih data lokasi",
-        options=filtered_df["nama"].tolist(),
-        index=0,
-    )
-
-    selected_row = filtered_df[filtered_df["nama"] == selected_name].iloc[0]
-
-    st.write(
-        f"**Koordinat:** "
-        f"{selected_row['latitude']:.4f}, {selected_row['longitude']:.4f}"
-    )
-    st.write(f"**Jenis:** {selected_row['jenis_ternak']}")
-    st.write(
-        f"**Jumlah:** "
-        f"{int(selected_row['jumlah_ekor']):,} ekor".replace(",", ".")
-    )
+with col_info:
+    st.subheader("Profil Lokasi")
+    st.write(f"**Nama:** {selected_row.get('nama', '-')}")
+    st.write(f"**Jenis ternak:** {selected_row.get('jenis_ternak', '-')}")
+    st.write(f"**Jumlah:** {int(selected_row.get('jumlah_ekor', 0)):,} ekor".replace(",", "."))
+    st.write(f"**Koordinat:** {selected_row.get('latitude', 0):.5f}, {selected_row.get('longitude', 0):.5f}")
 
     if "provinsi" in filtered_df.columns:
         st.write(f"**Provinsi:** {selected_row.get('provinsi', '-')}")
+    if "luas_lahan_ha" in filtered_df.columns and pd.notna(selected_row.get("luas_lahan_ha", None)):
+        st.write(f"**Luas lahan:** {selected_row.get('luas_lahan_ha')} ha")
 
-    try:
-        analyze_btn = st.button(
-            "🚀 Analisis NDVI",
-            type="primary",
-            width="stretch",
-        )
-    except TypeError:
-        analyze_btn = st.button(
-            "🚀 Analisis NDVI",
-            type="primary",
-            use_container_width=True,
-        )
+with col_rekom:
+    st.subheader("Kepadatan Ternak")
+    luas_lahan = selected_row.get("luas_lahan_ha", None) if "luas_lahan_ha" in selected_row.index else None
+    density, density_status, density_recs = density_insight(
+        selected_row.get("jenis_ternak", "-"),
+        int(selected_row.get("jumlah_ekor", 0)),
+        luas_lahan,
+    )
 
-with col2:
-    if analyze_btn:
-        if not gee_ready:
-            st.error(
-                "Google Earth Engine belum siap di Streamlit Cloud. "
-                "Cek sidebar bagian Status Google Earth Engine dan DEBUG Secrets."
-            )
+    if density is None:
+        show_metric_card("Status Kepadatan", density_status, "Tambahkan luas_lahan_ha pada CSV/XLSX untuk insight lebih baik.")
+    else:
+        show_metric_card("Kepadatan", f"{density:.2f} ekor/ha", density_status)
+        for rec in density_recs:
+            st.write(f"• {rec}")
 
-        else:
-            with st.spinner("Mengambil citra Sentinel-2 terbaru yang bebas awan..."):
-                try:
-                    lat = float(selected_row["latitude"])
-                    lon = float(selected_row["longitude"])
 
-                    point = ee.Geometry.Point([lon, lat])
+# ============================================================
+# ANALISIS SENTINEL-2 + REKOMENDASI
+# ============================================================
+st.header("🛰️ Analisis Hijauan/Pakan Berbasis NDVI Sentinel-2")
 
-                    end_date = ee.Date(datetime.now())
-                    start_date = end_date.advance(-30, "day")
+st.info(
+    "NDVI membantu membaca kondisi vegetasi/hijauan sekitar titik lokasi. "
+    "Untuk hasil paling akurat, gunakan koordinat kandang terbuka atau lahan hijauan/pakan, bukan kantor/desa."
+)
 
-                    s2 = (
-                        ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-                        .filterBounds(point)
-                        .filterDate(start_date, end_date)
-                        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
-                        .sort("system:time_start", False)
-                    )
+cloud_threshold = st.slider("Batas maksimal awan citra Sentinel-2 (%)", min_value=10, max_value=80, value=30, step=5)
+buffer_meter = st.slider("Radius analisis sekitar titik (meter)", min_value=100, max_value=2000, value=500, step=100)
 
-                    image_count = s2.size().getInfo()
+run_ndvi = full_width_button("🚀 Analisis NDVI + Tren 90 Hari", type="primary")
 
-                    if image_count == 0:
-                        st.warning(
-                            "Tidak ada citra Sentinel-2 dengan awan < 20% "
-                            "dalam 30 hari terakhir untuk lokasi ini."
-                        )
+if run_ndvi:
+    if not gee_ready:
+        st.error("Status satelit belum aktif. Aktifkan Google Earth Engine agar analisis NDVI dapat berjalan.")
+    else:
+        with st.spinner("Mengambil dan menganalisis citra Sentinel-2..."):
+            try:
+                lat = float(selected_row["latitude"])
+                lon = float(selected_row["longitude"])
+                point = ee.Geometry.Point([lon, lat])
 
-                    else:
-                        latest = s2.first()
+                today = datetime.now()
+                latest_start = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+                latest_end = today.strftime("%Y-%m-%d")
 
-                        ndvi = latest.normalizedDifference(["B8", "B4"]).rename("NDVI")
+                ndvi_value, image_count = get_ndvi_mean(point, latest_start, latest_end, cloud_threshold, buffer_meter)
+                trend_df = get_ndvi_trend_90_days(point, cloud_threshold, buffer_meter)
 
-                        ndvi_stats = ndvi.reduceRegion(
-                            reducer=ee.Reducer.mean(),
-                            geometry=point.buffer(500),
-                            scale=10,
-                            maxPixels=1e9,
-                        ).getInfo()
+                status, desc, color, ndvi_recs = classify_ndvi(ndvi_value)
+                report_df = build_recommendation_report(selected_row, ndvi_value, trend_df)
 
-                        ndvi_value = ndvi_stats.get("NDVI")
+                st.subheader("Hasil Kondisi Hijauan")
+                if ndvi_value is None:
+                    st.warning("NDVI belum tersedia untuk lokasi dan periode ini.")
+                else:
+                    st.metric("NDVI rata-rata 30 hari terakhir", f"{ndvi_value:.3f}", help="Rata-rata NDVI pada radius analisis.")
+                    st.write(f"**Status:** {status}")
+                    st.write(f"**Keterangan:** {desc}")
+                    st.caption(f"Jumlah citra Sentinel-2 yang dipakai: {image_count}")
 
-                        image_date = (
-                            ee.Date(latest.get("system:time_start"))
-                            .format("YYYY-MM-dd")
-                            .getInfo()
-                        )
+                st.subheader("Tren NDVI 90 Hari")
+                if trend_df["ndvi"].notna().sum() == 0:
+                    st.warning("Tren NDVI belum tersedia. Coba naikkan batas awan atau cek koordinat.")
+                else:
+                    chart_df = trend_df.set_index("periode")[["ndvi"]]
+                    st.line_chart(chart_df)
+                    st.dataframe(trend_df, width="stretch", hide_index=True)
 
-                        if ndvi_value is None:
-                            st.error("Gagal menghitung NDVI untuk lokasi ini.")
-
+                    valid = trend_df["ndvi"].dropna()
+                    if len(valid) >= 2:
+                        first = valid.iloc[0]
+                        last = valid.iloc[-1]
+                        change = ((last - first) / abs(first)) * 100 if first != 0 else 0
+                        if change < -10:
+                            st.warning(f"NDVI turun sekitar {change:.1f}% selama 90 hari. Ada indikasi penurunan hijauan.")
+                        elif change > 10:
+                            st.success(f"NDVI naik sekitar {change:.1f}% selama 90 hari. Kondisi hijauan cenderung membaik.")
                         else:
-                            st.metric(
-                                "NDVI rata-rata radius 500 m",
-                                f"{ndvi_value:.3f}",
-                            )
+                            st.info(f"Perubahan NDVI sekitar {change:.1f}%. Kondisi hijauan relatif stabil.")
 
-                            st.caption(f"Tanggal citra Sentinel-2: {image_date}")
+                st.subheader("Rekomendasi Otomatis untuk Peternak")
+                combined_recs = ndvi_recs + density_recs
+                for i, rec in enumerate(combined_recs, start=1):
+                    st.write(f"{i}. {rec}")
 
-                            if ndvi_value > 0.65:
-                                st.success(
-                                    "Vegetasi sangat sehat. "
-                                    "Potensi hijauan/pakan di sekitar titik cukup baik."
-                                )
+                csv_buffer = StringIO()
+                report_df.to_csv(csv_buffer, index=False)
+                st.download_button(
+                    "⬇️ Download Laporan Ringkas CSV",
+                    data=csv_buffer.getvalue(),
+                    file_name=f"laporan_peternakan_{selected_name.replace(' ', '_')}.csv",
+                    mime="text/csv",
+                )
 
-                            elif ndvi_value > 0.45:
-                                st.info(
-                                    "Vegetasi sedang. "
-                                    "Ketersediaan hijauan perlu dipantau berkala."
-                                )
-
-                            elif ndvi_value > 0.25:
-                                st.warning(
-                                    "Vegetasi rendah. "
-                                    "Ada indikasi area kurang hijau atau tertekan kekeringan."
-                                )
-
-                            else:
-                                st.error(
-                                    "Vegetasi sangat rendah. "
-                                    "Area kemungkinan dominan lahan terbuka/bangunan/air atau hijauan minim."
-                                )
-
-                except Exception as e:
-                    st.error(f"Terjadi error saat mengambil data GEE: {e}")
+            except Exception as e:
+                st.error(f"Terjadi error saat analisis NDVI: {e}")
 
 
 # ============================================================
@@ -880,27 +904,22 @@ col_stat1, col_stat2 = st.columns(2)
 
 with col_stat1:
     st.subheader("Populasi per Jenis Ternak")
-
     chart_df = (
         filtered_df.groupby("jenis_ternak", as_index=True)["jumlah_ekor"]
         .sum()
         .sort_values(ascending=False)
     )
-
     st.bar_chart(chart_df)
 
 with col_stat2:
     st.subheader("Populasi per Provinsi")
-
     if "provinsi" in filtered_df.columns:
         prov_chart = (
             filtered_df.groupby("provinsi", as_index=True)["jumlah_ekor"]
             .sum()
             .sort_values(ascending=False)
         )
-
         st.bar_chart(prov_chart)
-
     else:
         st.write("Kolom provinsi tidak tersedia pada data upload.")
 
@@ -909,32 +928,17 @@ st.subheader("📋 Tabel Data")
 
 display_cols = [
     col for col in [
-        "nama",
-        "provinsi",
-        "jenis_ternak",
-        "jumlah_ekor",
-        "tahun",
-        "jenis_data",
-        "latitude",
-        "longitude",
-        "sumber",
-        "keterangan",
+        "nama", "provinsi", "kabupaten_kota", "kecamatan", "desa", "alamat",
+        "jenis_ternak", "jumlah_ekor", "luas_lahan_ha", "tahun", "jenis_data",
+        "latitude", "longitude", "sumber", "keterangan",
     ]
     if col in filtered_df.columns
 ]
 
 try:
-    st.dataframe(
-        filtered_df[display_cols],
-        width="stretch",
-        hide_index=True,
-    )
+    st.dataframe(filtered_df[display_cols], width="stretch", hide_index=True)
 except TypeError:
-    st.dataframe(
-        filtered_df[display_cols],
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.dataframe(filtered_df[display_cols], use_container_width=True, hide_index=True)
 
 
 # ============================================================
@@ -944,8 +948,8 @@ st.markdown("---")
 
 st.caption(
     "Sumber data bawaan: BPS, tabel Populasi Ternak Menurut Provinsi dan Jenis Ternak (ekor), 2024. "
-    "Sebagian baris data dikurasi dari tabel resmi BPS untuk kebutuhan demo aplikasi. "
-    "Untuk data lengkap seluruh provinsi/jenis ternak, unduh tabel BPS atau gunakan API BPS dengan key resmi."
+    "Analisis NDVI memakai Sentinel-2 melalui Google Earth Engine. "
+    "Untuk hasil operasional, gunakan koordinat kandang atau lahan hijauan/pakan aktual."
 )
 
 st.link_button("Buka Tabel BPS", BPS_TABLE_URL)

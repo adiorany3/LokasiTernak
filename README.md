@@ -1,15 +1,29 @@
-# Dashboard Peternakan Indonesia
+# Dashboard Peternakan Indonesia — Versi Insight Peternak
 
-Aplikasi Streamlit untuk pemetaan data peternakan Indonesia, visualisasi populasi ternak, dan analisis NDVI Sentinel-2 menggunakan Google Earth Engine.
+Aplikasi Streamlit untuk pemetaan data peternakan, analisis kondisi hijauan/pakan berbasis NDVI Sentinel-2, tren NDVI 90 hari, kepadatan ternak per hektare, dan rekomendasi otomatis untuk peternak.
 
 ## Isi ZIP
 
-- `app.py` — kode aplikasi utama.
+- `app.py` — kode aplikasi final.
 - `requirements.txt` — dependency Python.
 - `data_peternakan_indonesia_bps_2024.csv` — data bawaan agregat provinsi.
-- `contoh_format_upload_peternakan.csv` dan `contoh_format_upload_peternakan.xlsx` — contoh CSV terbaik untuk upload data kandang nyata.
-- `.streamlit/config.toml` — konfigurasi light theme agar tulisan/legend terbaca.
-- `.streamlit/secrets_TEMPLATE.toml` — template Secrets, jangan isi private key asli di GitHub.
+- `contoh_format_upload_peternakan.csv` — contoh upload CSV.
+- `contoh_format_upload_peternakan.xlsx` — contoh upload XLSX.
+- `.streamlit/config.toml` — paksa light theme agar legend dan teks terbaca.
+- `.streamlit/secrets_TEMPLATE.toml` — template Secrets. Jangan isi private key asli di GitHub.
+
+## Fitur Utama
+
+1. Upload data `.csv` dan `.xlsx`.
+2. Peta interaktif lokasi peternakan.
+3. Marker warna berdasarkan jenis ternak.
+4. Legend peta dipaksa terang agar mudah terbaca.
+5. Analisis NDVI Sentinel-2 radius 100–2000 meter.
+6. Tren NDVI 90 hari.
+7. Skor kondisi hijauan/pakan.
+8. Rekomendasi otomatis untuk peternak.
+9. Kepadatan ternak per hektare jika ada kolom `luas_lahan_ha`.
+10. Download laporan ringkas CSV.
 
 ## Cara Menjalankan Lokal
 
@@ -18,11 +32,10 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Format CSV Upload
-
-Aplikasi mendukung upload `.csv` dan `.xlsx`.
+## Format Upload Terbaik
 
 Kolom wajib:
+
 - `nama`
 - `latitude`
 - `longitude`
@@ -30,6 +43,7 @@ Kolom wajib:
 - `jumlah_ekor`
 
 Kolom rekomendasi:
+
 - `provinsi`
 - `kabupaten_kota`
 - `kecamatan`
@@ -42,24 +56,25 @@ Kolom rekomendasi:
 - `sumber`
 - `keterangan`
 
-Contoh sudah tersedia di `contoh_format_upload_peternakan.csv` dan `contoh_format_upload_peternakan.xlsx`.
+## Catatan Penting
 
-## Setting Google Earth Engine di Streamlit Cloud
+- `jumlah_ekor` sebaiknya angka polos, contoh `2500`.
+- `latitude` dan `longitude` harus angka desimal, contoh `-6.704512` dan `106.821345`.
+- Untuk NDVI, gunakan koordinat kandang/lahan hijauan/pakan aktual.
+- Jika memakai data BPS bawaan, titik hanyalah representatif ibu kota provinsi.
+
+## Streamlit Cloud + Google Earth Engine
 
 1. Buat Google Cloud Project.
 2. Enable Earth Engine API.
 3. Register project untuk Google Earth Engine.
 4. Buat Service Account.
 5. Download JSON key.
-6. Paste ke Streamlit Cloud `Manage app -> Settings -> Secrets` menggunakan format pada `.streamlit/secrets_TEMPLATE.toml`.
-7. Reboot app.
+6. Masukkan credential ke `Streamlit Cloud -> Manage app -> Settings -> Secrets`.
+7. Gunakan format pada `.streamlit/secrets_TEMPLATE.toml`.
+8. Reboot app.
 
-## Catatan Keamanan
+## Keamanan
 
-Jangan upload `secrets.toml` berisi private key asli ke GitHub.
-Jika private key pernah tersebar, revoke/hapus key lama dan buat JSON key baru.
-
-
-## Dukungan XLSX
-
-Aplikasi sudah mendukung upload Excel `.xlsx` menggunakan `pd.read_excel()`. Dependency `openpyxl` sudah ditambahkan pada `requirements.txt`.
+Jangan upload `secrets.toml` yang berisi private key asli ke GitHub.
+Jika private key pernah tersebar, revoke/hapus key lama dan buat key JSON baru.
