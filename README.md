@@ -114,3 +114,17 @@ Versi ini menambahkan analisis:
 - Download laporan lingkungan dalam format XLSX.
 
 Catatan penting: data tanah, elevasi, dan curah hujan pada aplikasi bersifat estimasi awal dari satelit/model global. Untuk mendapatkan data yang lebih akurat, peternak tetap perlu melakukan pengecekan langsung di lapangan dan uji tanah bila diperlukan.
+
+## Modul Gas & Emisi Peternakan
+
+Versi ini menambahkan:
+- Profil CH₄ atmosfer dari Sentinel-5P/TROPOMI.
+- Profil CO atmosfer dari Sentinel-5P/TROPOMI.
+- Profil NO₂ atmosfer dari Sentinel-5P/TROPOMI.
+- Estimasi emisi CH₄ dari ternak berdasarkan jenis dan jumlah ternak.
+- Estimasi N₂O dari pengelolaan kotoran ternak secara sederhana.
+- Estimasi CO₂e per tahun.
+- Rekomendasi pengurangan emisi dan gas untuk peternak awam.
+- Download laporan Gas & Emisi dalam format XLSX.
+
+Catatan penting: data gas satelit adalah indikasi atmosfer wilayah luas, bukan pengukuran langsung dari kandang. Estimasi emisi ternak bersifat pendekatan awal. Untuk data yang paling akurat, lakukan pengukuran langsung memakai sensor gas, audit emisi, atau pengecekan lapangan.
