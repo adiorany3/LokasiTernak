@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 
 # ==================== KONFIGURASI DASAR ====================
 APP_TITLE = "Dashboard Peternakan Indonesia"
-DEVELOPER_NAME = "Galuh Adi Insani"  # ganti nama di sini jika diperlukan
+DEVELOPER_NAME = "Marcus Thorne"  # ganti nama di sini jika diperlukan
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 BPS_TABLE_URL = "https://www.bps.go.id/id/statistics-table/3/UzJWaVUxZHdWVGxwU1hSd1UxTXZlbmRITjA1Q2R6MDkjMw%3D%3D/populasi-ternak-menurut-provinsi-dan-jenis-ternak--ekor---2024.html?year=2024"
 
@@ -84,24 +84,110 @@ st.markdown(
 
 
 # ==================== GOOGLE EARTH ENGINE ====================
-def initialize_gee() -> bool:
-    """Initialize Google Earth Engine. Jika gagal, aplikasi tetap bisa dipakai tanpa fitur NDVI."""
+def _read_gee_project() -> str | None:
+    """Ambil Project ID dari Streamlit Secrets. Aman jika Secrets belum dibuat."""
     try:
-        ee.Initialize()
-        return True
+        project = st.secrets.get("GEE_PROJECT", None)
+        if project:
+            return str(project).strip()
     except Exception:
-        try:
-            project = st.secrets.get("GEE_PROJECT", None)
-            if project:
-                ee.Initialize(project=project)
-                return True
-        except Exception:
-            pass
+        return None
+    return None
 
-    return False
+
+def _read_service_account_info() -> dict | None:
+    """
+    Membaca credential service account dari Streamlit Secrets.
+    Mendukung 2 format:
+    1) [gcp_service_account] berbentuk TOML table.
+    2) GEE_SERVICE_ACCOUNT_JSON berisi string JSON penuh.
+    """
+    try:
+        if "gcp_service_account" in st.secrets:
+            info = dict(st.secrets["gcp_service_account"])
+        elif "GEE_SERVICE_ACCOUNT_JSON" in st.secrets:
+            import json
+            info = json.loads(st.secrets["GEE_SERVICE_ACCOUNT_JSON"])
+        else:
+            return None
+
+        if "private_key" in info and isinstance(info["private_key"], str):
+            # Streamlit Secrets kadang menyimpan newline sebagai karakter \n.
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
+
+        return info
+    except Exception as e:
+        st.session_state["gee_init_error"] = f"Secrets terbaca, tetapi format service account salah: {e}"
+        return None
+
+
+def initialize_gee() -> bool:
+    """
+    Inisialisasi Google Earth Engine untuk Streamlit Cloud dan lokal.
+    Streamlit Cloud wajib memakai Service Account dari Secrets.
+    """
+    project = _read_gee_project()
+    service_account_info = _read_service_account_info()
+
+    try:
+        if service_account_info:
+            from google.oauth2 import service_account
+
+            required_keys = [
+                "type", "project_id", "private_key_id", "private_key",
+                "client_email", "client_id", "token_uri"
+            ]
+            missing_keys = [k for k in required_keys if not service_account_info.get(k)]
+            if missing_keys:
+                raise ValueError(f"Secrets service account kurang field: {missing_keys}")
+
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=[
+                    "https://www.googleapis.com/auth/earthengine",
+                    "https://www.googleapis.com/auth/cloud-platform",
+                ],
+            )
+
+            ee.Initialize(
+                credentials=credentials,
+                project=project or service_account_info.get("project_id"),
+            )
+
+            # Tes ringan agar error permission/API langsung terlihat.
+            ee.Number(1).getInfo()
+            st.session_state["gee_init_mode"] = "Service Account Streamlit Secrets"
+            st.session_state["gee_init_error"] = ""
+            return True
+
+        # Fallback hanya untuk lokal/laptop. Di Streamlit Cloud biasanya akan gagal.
+        if project:
+            ee.Initialize(project=project)
+        else:
+            ee.Initialize()
+
+        ee.Number(1).getInfo()
+        st.session_state["gee_init_mode"] = "Credential lokal / default"
+        st.session_state["gee_init_error"] = ""
+        return True
+
+    except Exception as e:
+        st.session_state["gee_init_mode"] = "Belum aktif"
+        st.session_state["gee_init_error"] = str(e)
+        return False
 
 
 gee_ready = initialize_gee()
+
+with st.sidebar.expander("Status Google Earth Engine", expanded=not gee_ready):
+    if gee_ready:
+        st.success(f"GEE aktif via {st.session_state.get('gee_init_mode', '-')}")
+    else:
+        st.warning("GEE belum aktif di Streamlit Cloud.")
+        st.caption("Pastikan Service Account sudah dimasukkan ke Streamlit Secrets, Earth Engine API aktif, dan project sudah terdaftar untuk Earth Engine.")
+        detail = st.session_state.get("gee_init_error")
+        if detail:
+            st.code(detail, language="text")
 
 
 # ==================== DATA LOADING ====================
@@ -284,7 +370,29 @@ legend_html = f"""
 m.get_root().html.add_child(folium.Element(legend_html))
 folium.LayerControl().add_to(m)
 
-st_folium(m, width=None, height=540, returned_objects=[])
+# Render peta dengan cara yang kompatibel untuk beberapa versi streamlit-folium.
+# Catatan: width=None pada beberapa versi membuat map tidak muncul.
+try:
+    st_folium(
+        m,
+        height=540,
+        use_container_width=True,
+        returned_objects=["last_object_clicked"],
+        key="peta_peternakan_indonesia",
+    )
+except TypeError:
+    # Fallback untuk streamlit-folium versi lama yang belum mendukung use_container_width.
+    st_folium(
+        m,
+        width=1200,
+        height=540,
+        returned_objects=["last_object_clicked"],
+        key="peta_peternakan_indonesia_fallback",
+    )
+except Exception as map_error:
+    # Fallback terakhir: tampilkan Folium sebagai HTML mentah.
+    st.warning(f"Komponen streamlit-folium gagal dimuat: {map_error}")
+    st.components.v1.html(m.get_root().render(), height=560, scrolling=False)
 
 # ==================== ANALISIS SENTINEL-2 ====================
 st.header("🛰️ Analisis NDVI Sentinel-2")
@@ -310,7 +418,7 @@ with col1:
 with col2:
     if analyze_btn:
         if not gee_ready:
-            st.error("Google Earth Engine belum siap. Jalankan `earthengine authenticate` atau isi `GEE_PROJECT` di Streamlit Secrets.")
+            st.error("Google Earth Engine belum siap di Streamlit Cloud. Isi Service Account pada Streamlit Secrets, aktifkan Earth Engine API, lalu Reboot app.")
         else:
             with st.spinner("Mengambil citra Sentinel-2 terbaru yang bebas awan..."):
                 try:
