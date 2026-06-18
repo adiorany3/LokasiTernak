@@ -7,7 +7,7 @@ Aplikasi Streamlit untuk pemetaan data peternakan Indonesia, visualisasi populas
 - `app.py` — kode aplikasi utama.
 - `requirements.txt` — dependency Python.
 - `data_peternakan_indonesia_bps_2024.csv` — data bawaan agregat provinsi.
-- `contoh_format_upload_peternakan.csv` — contoh CSV terbaik untuk upload data kandang nyata.
+- `contoh_format_upload_peternakan.csv` dan `contoh_format_upload_peternakan.xlsx` — contoh CSV terbaik untuk upload data kandang nyata.
 - `.streamlit/config.toml` — konfigurasi light theme agar tulisan/legend terbaca.
 - `.streamlit/secrets_TEMPLATE.toml` — template Secrets, jangan isi private key asli di GitHub.
 
@@ -19,6 +19,8 @@ streamlit run app.py
 ```
 
 ## Format CSV Upload
+
+Aplikasi mendukung upload `.csv` dan `.xlsx`.
 
 Kolom wajib:
 - `nama`
@@ -40,7 +42,7 @@ Kolom rekomendasi:
 - `sumber`
 - `keterangan`
 
-Contoh sudah tersedia di `contoh_format_upload_peternakan.csv`.
+Contoh sudah tersedia di `contoh_format_upload_peternakan.csv` dan `contoh_format_upload_peternakan.xlsx`.
 
 ## Setting Google Earth Engine di Streamlit Cloud
 
@@ -56,3 +58,8 @@ Contoh sudah tersedia di `contoh_format_upload_peternakan.csv`.
 
 Jangan upload `secrets.toml` berisi private key asli ke GitHub.
 Jika private key pernah tersebar, revoke/hapus key lama dan buat JSON key baru.
+
+
+## Dukungan XLSX
+
+Aplikasi sudah mendukung upload Excel `.xlsx` menggunakan `pd.read_excel()`. Dependency `openpyxl` sudah ditambahkan pada `requirements.txt`.

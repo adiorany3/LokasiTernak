@@ -15,7 +15,7 @@ from streamlit_folium import st_folium
 # KONFIGURASI DASAR
 # ============================================================
 APP_TITLE = "Dashboard Peternakan Indonesia"
-DEVELOPER_NAME = "Galuh Adi Insani"
+DEVELOPER_NAME = "Marcus Thorne"
 
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 
@@ -173,7 +173,7 @@ st.markdown(
     <b>data agregat provinsi BPS 2024</b> untuk populasi sapi perah dan sapi potong.
     Titik pada peta adalah <b>koordinat representatif ibu kota provinsi</b>,
     bukan titik kandang individu. Untuk analisis kandang nyata, gunakan menu
-    <b>Upload CSV Sendiri</b> berisi koordinat peternakan asli.
+    <b>Upload CSV/XLSX Sendiri</b> berisi koordinat peternakan asli.
     </div>
     """,
     unsafe_allow_html=True,
@@ -387,6 +387,29 @@ def load_default_data():
         return pd.DataFrame()
 
 
+def read_uploaded_peternakan_file(uploaded_file):
+    """
+    Membaca file upload CSV atau XLSX.
+    CSV: pd.read_csv
+    XLSX: pd.read_excel sheet pertama
+    """
+    filename = uploaded_file.name.lower()
+
+    try:
+        if filename.endswith(".csv"):
+            return pd.read_csv(uploaded_file)
+
+        if filename.endswith(".xlsx"):
+            return pd.read_excel(uploaded_file, sheet_name=0)
+
+        st.error("Format file tidak didukung. Gunakan CSV atau XLSX.")
+        return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"Gagal membaca file upload: {e}")
+        return pd.DataFrame()
+
+
 def clean_and_validate_data(df):
     required_cols = [
         "nama",
@@ -430,20 +453,20 @@ data_source = st.sidebar.radio(
     "Pilih sumber data:",
     options=[
         "Data Resmi BPS 2024 (Agregat Provinsi)",
-        "Upload CSV Sendiri",
+        "Upload CSV/XLSX Sendiri",
     ],
     index=0,
 )
 
 uploaded_file = None
 
-if data_source == "Upload CSV Sendiri":
+if data_source == "Upload CSV/XLSX Sendiri":
     uploaded_file = st.sidebar.file_uploader(
-        "Upload file CSV lokasi peternakan",
-        type=["csv"],
+        "Upload file CSV/XLSX lokasi peternakan",
+        type=["csv", "xlsx"],
         help=(
-            "Kolom wajib: nama, latitude, longitude, jenis_ternak, jumlah_ekor. "
-            "Kolom opsional: provinsi, tahun, sumber."
+            "Format: CSV atau XLSX. Kolom wajib: nama, latitude, longitude, jenis_ternak, jumlah_ekor. "
+            "Kolom opsional: provinsi, kabupaten_kota, kecamatan, desa, alamat, luas_lahan_ha, tahun, sumber."
         ),
     )
 
@@ -455,8 +478,8 @@ if data_source == "Data Resmi BPS 2024 (Agregat Provinsi)":
         st.sidebar.caption("Satuan: ekor. Titik peta: ibu kota provinsi.")
 
 elif uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.sidebar.success(f"✅ {len(df)} baris data berhasil dimuat")
+    df = read_uploaded_peternakan_file(uploaded_file)
+    st.sidebar.success(f"✅ {len(df)} baris data berhasil dimuat dari {uploaded_file.name}")
 
 else:
     st.sidebar.warning("Upload CSV terlebih dahulu atau gunakan data BPS bawaan.")
