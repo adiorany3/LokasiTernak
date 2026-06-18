@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 
 # ==================== KONFIGURASI DASAR ====================
 APP_TITLE = "Dashboard Peternakan Indonesia"
-DEVELOPER_NAME = "Marcus Thorne"  # ganti nama di sini jika diperlukan
+DEVELOPER_NAME = "Galuh Adi Insani"  # ganti nama di sini jika diperlukan
 DEFAULT_DATA_FILE = "data_peternakan_indonesia_bps_2024.csv"
 BPS_TABLE_URL = "https://www.bps.go.id/id/statistics-table/3/UzJWaVUxZHdWVGxwU1hSd1UxTXZlbmRITjA1Q2R6MDkjMw%3D%3D/populasi-ternak-menurut-provinsi-dan-jenis-ternak--ekor---2024.html?year=2024"
 
