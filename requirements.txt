@@ -3,6 +3,7 @@ pandas>=2.0
 folium>=0.15
 streamlit-folium>=0.18
 earthengine-api>=0.1.380
+google-auth
 # Untuk analisis lebih advanced nanti (opsional)
 # geopandas>=0.14
 # leafmap>=0.30
